@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+.DS_Store
+backend/coverage/
+data_images/
+backups/
+# Eigene Import-Testdateien (echte Decklisten/Sammlungsexporte) — persönlich,
+# nicht Teil des öffentlichen Repos.
+data_import/
+# Persönliches Session-/Entwicklungs-Tagebuch mit Infrastruktur-Details für den
+# eigenen Betrieb — bewusst nicht Teil des öffentlichen Repos.
+PROGRESS.md

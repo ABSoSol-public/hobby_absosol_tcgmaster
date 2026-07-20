@@ -1,0 +1,42 @@
+# Deployment auf der Synology.
+# Die MariaDB läuft NICHT als Container hier, sondern ist die bereits
+# vorhandene Instanz auf der Synology — Zugangsdaten kommen aus .env.
+#
+# Start:  docker compose up -d --build
+# Logs:   docker compose logs -f backend
+# Stop:   docker compose down
+
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-tcg_collection}
+      API_PORT: 3001
+      CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-8080}
+      POKEMON_TCG_API_KEY: ${POKEMON_TCG_API_KEY:-}
+      IMAGES_DIR: /images
+      JWT_SECRET: ${JWT_SECRET}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      # Lokal gespiegelte Kartenbilder (npm run images:download) — Host-Pfad
+      # per IMAGES_DIR in .env setzen (Synology z. B. /volume1/docker/tcg/images).
+      - ${IMAGES_DIR:-./data_images}:/images:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - '${FRONTEND_PORT:-8080}:80'
+    depends_on:
+      - backend

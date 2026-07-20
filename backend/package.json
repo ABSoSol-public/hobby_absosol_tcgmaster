@@ -1,0 +1,40 @@
+{
+  "name": "tcg-collection-backend",
+  "version": "1.0.0",
+  "description": "REST-API des TCG Collection Managers (Yu-Gi-Oh! u. a.)",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "migrate": "knex migrate:latest",
+    "migrate:rollback": "knex migrate:rollback",
+    "import:yugioh": "tsx src/scripts/import-yugioh.ts",
+    "import:game": "tsx src/scripts/import-game.ts",
+    "import:delta": "tsx src/scripts/import-delta.ts",
+    "import:cardcluster": "tsx src/scripts/import-cardcluster.ts",
+    "images:download": "tsx src/scripts/download-images.ts",
+    "user:create": "tsx src/scripts/create-user.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/cors": "^10.0.1",
+    "@fastify/jwt": "^10.2.0",
+    "@fastify/static": "^10.1.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.2.0",
+    "knex": "^3.1.0",
+    "mysql2": "^3.11.5",
+    "stream-json": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
