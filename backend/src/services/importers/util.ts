@@ -21,11 +21,43 @@ export function hashOf(value: unknown): string {
   return createHash('md5').update(JSON.stringify(value)).digest('hex');
 }
 
+/** Wie viele Preis-Historie-Einträge pro Print maximal aufgehoben werden. */
+export const PRICE_HISTORY_KEEP = 10;
+
+/**
+ * Kürzt price_history je print_id auf die `keep` neuesten Einträge — die
+ * volle Kurve ist nur ein nettes Goodie, für den praktischen Gebrauch
+ * (Trend erkennen) reichen die letzten paar Preisänderungen. Nutzt einen
+ * abgeleiteten Tabellen-Trick (`SELECT ... FROM (SELECT ...) AS x`), weil
+ * MySQL/MariaDB nicht erlaubt, in derselben DELETE-Anweisung direkt aus der
+ * Zieltabelle zu selektieren.
+ */
+export async function pruneOldPriceHistory(printIds: number[], keep: number = PRICE_HISTORY_KEEP): Promise<void> {
+  const unique = [...new Set(printIds)].filter((id) => Number.isInteger(id) && id > 0);
+  for (const printId of unique) {
+    await db.raw(
+      `DELETE FROM price_history
+       WHERE print_id = ?
+         AND id NOT IN (
+           SELECT id FROM (
+             SELECT id FROM price_history
+             WHERE print_id = ?
+             ORDER BY recorded_at DESC, id DESC
+             LIMIT ?
+           ) AS keep_ids
+         )`,
+      [printId, printId, keep]
+    );
+  }
+}
+
 /**
  * Schreibt Preis-Snapshots in price_history.
  * Die Importer rufen das nur für Prints auf, deren Preis sich tatsächlich
  * geändert hat (oder die neu sind) — so bleibt die Historie kompakt und
  * der tägliche Delta-Cron erzeugt automatisch eine Preiskurve.
+ * Kürzt anschließend je betroffenem Print auf die letzten `PRICE_HISTORY_KEEP`
+ * Einträge (siehe `pruneOldPriceHistory()`).
  */
 export async function recordPriceHistory(
   rows: { print_id: number; price: number }[],
@@ -38,6 +70,7 @@ export async function recordPriceHistory(
       chunk.map((r) => ({ print_id: r.print_id, source, price: r.price, currency }))
     );
   }
+  await pruneOldPriceHistory(valid.map((r) => r.print_id));
   return valid.length;
 }
 

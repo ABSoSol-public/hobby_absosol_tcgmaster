@@ -3,6 +3,7 @@ import { db } from '../db';
 import { collectorNumberLikePatterns } from '../services/cardNumbers';
 import { filtersFor } from '../services/gameConfig';
 import { withLocalImages } from '../services/images';
+import { PRICE_HISTORY_KEEP, pruneOldPriceHistory } from '../services/importers/util';
 import { Card, parseGameData } from '../types';
 
 interface CardListQuery {
@@ -223,16 +224,20 @@ export async function cardRoutes(app: FastifyInstance) {
   });
 
   // Preis-Historie eines Prints (wird vom täglichen Delta-Import befüllt,
-  // "manual"-Einträge kommen vom Nutzer selbst über den Endpoint unten)
+  // "manual"-Einträge kommen vom Nutzer selbst über den Endpoint unten).
+  // Serverseitig auf die neuesten PRICE_HISTORY_KEEP Einträge begrenzt —
+  // Inserts kürzen die Tabelle ohnehin darauf (pruneOldPriceHistory()),
+  // das Limit hier ist nur ein defensives Zweites-Netz.
   app.get<{ Params: { id: string } }>('/prints/:id/prices', async (req, reply) => {
     const print = await db('card_prints').where('id', Number(req.params.id)).first();
     if (!print) return reply.code(404).send({ error: { message: 'Print nicht gefunden', statusCode: 404 } });
 
     const history = await db('price_history')
       .where('print_id', print.id)
-      .orderBy('recorded_at')
+      .orderBy('recorded_at', 'desc')
+      .limit(PRICE_HISTORY_KEEP)
       .select('id', 'price', 'currency', 'source', 'recorded_at');
-    return { data: history };
+    return { data: history.reverse() };
   });
 
   // Eigenen Preis-Snapshot erfassen (z. B. eigene Marktbeobachtung, wenn die
@@ -257,9 +262,18 @@ export async function cardRoutes(app: FastifyInstance) {
         currency: (req.body.currency || 'EUR').toUpperCase(),
         recorded_at: recordedAt,
       });
+      await pruneOldPriceHistory([print.id]);
       await syncMarketPrice(print.id);
 
+      // Bei stark rückdatierten recorded_at-Werten kann der eigene Eintrag
+      // durch das Kürzen auf die neuesten PRICE_HISTORY_KEEP direkt wieder
+      // rausfallen — dann gibt es hier nichts zurückzugeben.
       const created = await db('price_history').where('id', id).first();
+      if (!created) {
+        return reply
+          .code(201)
+          .send({ data: null, message: `Preis gespeichert, aber älter als die ${PRICE_HISTORY_KEEP} zuletzt aufgehobenen Einträge und daher direkt wieder entfernt.` });
+      }
       return reply.code(201).send({ data: created });
     }
   );

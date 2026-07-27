@@ -92,12 +92,16 @@ Vorgehen für ein weiteres Spiel:
 ## Geplante Releases
 
 ### Version 1.12 — Analytics & Insights
+- [x] Preis-Historie auf maximal die neuesten 10 Einträge je Print begrenzt: `pruneOldPriceHistory()` (`backend/src/services/importers/util.ts`) kürzt nach jedem Insert (Importer über `recordPriceHistory()` **und** der manuelle Preis-Snapshot-Endpoint `POST /prints/:id/prices`) die Tabelle je `print_id` auf die letzten 10 Einträge; `GET /prints/:id/prices` begrenzt defensiv ebenfalls. Einmalige Bereinigung von Bestandsdaten über Migration `20260727000002_prune_price_history.js`. Grund: die volle, unbegrenzte Kurve ist nur ein nettes Goodie — für den praktischen Nutzen (Trend erkennen) reichen die letzten Preisänderungen, und die Tabelle wächst so nicht unbegrenzt.
 - [ ] Sammlungswert-Verlauf: Zeitreihen-Chart des **gesamten** Sammlungswerts (Summe `quantity × market_price` über alle `collection_items`, täglicher Snapshot analog zum bestehenden `price_history`-Mechanismus) — ein Portfolio-Chart statt nur der bestehenden Preis-Historie pro einzelnem Print
-- [ ] Gewinn/Verlust-Anzeige: `purchase_price` vs. aktueller `market_price`, je Karte und aggregiert über die ganze Sammlung ("wie viel steckt drin, was ist es wert")
 - [ ] "Top Mover": Karten mit der größten Preisveränderung (absolut/prozentual) über einen wählbaren Zeitraum — lässt sich direkt aus der vorhandenen `price_history` ableiten, ohne neue Datenquelle
 - [ ] Verteilungs-Diagramme im Dashboard (Rarity/Set/Typ/Element/Farbe) — ließen sich weitgehend generisch aus den bestehenden Filterdefinitionen in `gameConfig.ts` ableiten, analog zum Muster der Karten-Filter
 - [ ] Set-Vervollständigung als Ranking/Heatmap über alle Sets hinweg (statt nur Fortschrittsbalken auf der einzelnen Set-Seite) — "welche Sets sind am nächsten an 100 %"
 - [ ] Jahres-/Monatsrückblick ("Wrapped"-Stil): neue Karten im Zeitraum, ausgegebenes Geld, wertvollster Neuzugang, größter Wertzuwachs
+- [ ] Meta-Strategieanalyse: aus Kartentexten abgeleitete Strategien im Abgleich mit tatsächlich im Turnier erfolgreichen Decks (Nutzer liefert die Meta-Decks als Input) — daraus Vorschläge für Konter-Strategien ableiten, sowohl anhand am Markt verfügbarer Karten als auch anhand der eigenen Sammlung. Setzt zusätzlich eine Spielverlaufs-Simulation voraus, um einen möglichen Spielablauf gegen ein Meta-Deck durchzuspielen. Größeres, noch unscharfes Vorhaben — Umfang/Datenmodell (Meta-Deck-Ablage, Simulationsregeln je Spiel) muss vor Beginn noch geklärt werden.
+
+### Nice-to-have (kein fester Versionsbezug)
+- [ ] Gewinn/Verlust-Anzeige: `purchase_price` vs. aktueller `market_price`, je Karte und aggregiert über die ganze Sammlung ("wie viel steckt drin, was ist es wert") — bewusst herabgestuft, da rein informativ ohne direkten Bedienkomfort-Gewinn
 
 ### Version 1.13 — Komfort & Bedienung
 - [ ] Bulk-Aktionen in der Sammlungstabelle (mehrere Zeilen markieren, Zustand/Lagerort/Sprache gemeinsam ändern statt Zeile für Zeile)
