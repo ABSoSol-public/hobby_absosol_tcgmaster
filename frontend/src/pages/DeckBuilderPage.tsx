@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import CardImage from '../components/CardImage';
 import { deckRulesFor, legalCopiesFor } from '../deckRules';
 import { cardName, useLanguage } from '../i18n';
@@ -10,6 +11,7 @@ const GRAY_KEY = 'tcg-deck-gray-unowned';
 
 export default function DeckBuilderPage() {
   const { id } = useParams();
+  const { canEdit } = useAuth();
   const { lang, t, tf } = useLanguage();
   const [deck, setDeck] = useState<DeckDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +122,7 @@ export default function DeckBuilderPage() {
 
       <div className="deck-header">
         <h1>{deck.name}</h1>
-        <button className="btn small" onClick={rename}>{t('deck_rename')}</button>
+        {canEdit && <button className="btn small" onClick={rename}>{t('deck_rename')}</button>}
         <a className="btn small" href={api.deckExportUrl(deck.id)} download>{t('deck_export_ydk')}</a>
         <button className="btn small" onClick={() => window.print()}>{t('deck_export_pdf')}</button>
         <label className="switch">
@@ -172,8 +174,12 @@ export default function DeckBuilderPage() {
                   <div className="rowname">{cardName(c, lang)}</div>
                   <div className="muted" style={{ fontSize: 12 }}>{c.card_type}</div>
                 </div>
-                <button className="btn small primary" onClick={() => addCard(c)}>{t('deck_add')}</button>
-                {hasSide && <button className="btn small" onClick={() => addCard(c, 'side')}>{t('deck_add_side')}</button>}
+                {canEdit && (
+                  <>
+                    <button className="btn small primary" onClick={() => addCard(c)}>{t('deck_add')}</button>
+                    {hasSide && <button className="btn small" onClick={() => addCard(c, 'side')}>{t('deck_add_side')}</button>}
+                  </>
+                )}
               </div>
             ))
           )}
@@ -202,6 +208,7 @@ export default function DeckBuilderPage() {
                       entry={entry}
                       gray={grayUnowned && entry.ownedQuantity === 0}
                       navState={navState}
+                      canEdit={canEdit}
                       onQty={(q) => setQty(entry.card_id, entry.zone, q)}
                     />
                   ))
@@ -240,11 +247,13 @@ function DeckCardRow({
   entry,
   gray,
   navState,
+  canEdit,
   onQty,
 }: {
   entry: DeckCardEntry;
   gray: boolean;
   navState: CardNavState;
+  canEdit: boolean;
   onQty: (quantity: number) => void;
 }) {
   const { lang } = useLanguage();
@@ -266,9 +275,9 @@ function DeckCardRow({
         {ownedEnough ? '✓' : `${Math.min(entry.ownedQuantity, entry.quantity)}/${entry.quantity}`}
       </span>
       <div className="qty-controls">
-        <button className="btn small" onClick={() => onQty(entry.quantity - 1)}>−</button>
+        {canEdit && <button className="btn small" onClick={() => onQty(entry.quantity - 1)}>−</button>}
         <span>{entry.quantity}</span>
-        <button className="btn small" onClick={() => onQty(entry.quantity + 1)}>+</button>
+        {canEdit && <button className="btn small" onClick={() => onQty(entry.quantity + 1)}>+</button>}
       </div>
     </div>
   );

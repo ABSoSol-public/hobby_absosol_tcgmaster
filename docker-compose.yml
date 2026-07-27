@@ -10,6 +10,13 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    # Läuft standardmäßig als der im Image eingerichtete "node"-User (UID/GID
+    # 1000, kein root — siehe backend/Dockerfile). Wird IMAGES_DIR read-only
+    # von einem Host-Pfad mit anderem Besitzer gemountet (z. B. eine Synology-
+    # Freigabe mit eigenen ACLs), UID/GID hier per BACKEND_UID/BACKEND_GID in
+    # der .env auf den tatsächlichen Besitzer des Ordners setzen, sonst gibt es
+    # "EACCES: permission denied" beim Ausliefern der Bilder.
+    user: '${BACKEND_UID:-1000}:${BACKEND_GID:-1000}'
     environment:
       NODE_ENV: production
       DB_HOST: ${DB_HOST}
@@ -26,17 +33,46 @@ services:
     volumes:
       # Lokal gespiegelte Kartenbilder (npm run images:download) — Host-Pfad
       # per IMAGES_DIR in .env setzen (Synology z. B. /volume1/docker/tcg/images).
-      - ${IMAGES_DIR:-./data_images}:/images:ro
+      # BEWUSST NICHT ":ro" — derselbe Backend-Container lädt hier bei "Bilder
+      # aktualisieren" (bzw. dem täglichen Cron) auch neue/geänderte Bilder
+      # herunter und schreibt sie in genau dieses Verzeichnis. Ein Read-Only-
+      # Mount ließ neue Kartenbilder mit "EROFS: read-only file system" scheitern
+      # (gefunden 2026-07-21 bei Magic/Pokémon — die anderen Spiele hatten in dem
+      # Lauf zufällig nichts Neues zu laden, also blieb der Bug dort unbemerkt).
+      - ${IMAGES_DIR:-./data_images}:/images
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/api/health']
       interval: 15s
       timeout: 5s
       retries: 5
+    networks:
+      tcgnet:
 
   frontend:
     build: ./frontend
     restart: unless-stopped
+    environment:
+      # Auf 'true' setzen, wenn ein TLS-Reverse-Proxy vorgeschaltet ist (siehe
+      # docs/DEPLOYMENT-SYNOLOGY.md Abschnitt 10) — erzwingt dann HTTPS und
+      # schließt so den direkten, unverschlüsselten Zugriff auf diesen Port.
+      FORCE_HTTPS: ${FORCE_HTTPS:-}
     ports:
       - '${FRONTEND_PORT:-8080}:80'
+    # Feste interne IP, damit ein host-seitiger Reverse Proxy (z. B. DSM) den
+    # Container direkt ansprechen kann, statt über den veröffentlichten Port
+    # (s. o.) zu gehen — auf manchen Systemen (beobachtet nach einem großen
+    # Synology-DSM-Update) ist genau dieser NAT-Weg intermittierend fehlerhaft
+    # (Verbindung hängt nach ca. 60s, `HTTP/2 ... INTERNAL_ERROR`), während
+    # Docker-interne Container-zu-Container-Verbindungen zuverlässig laufen.
+    # Siehe docs/DEPLOYMENT-SYNOLOGY.md Abschnitt 10.
+    networks:
+      tcgnet:
+        ipv4_address: 172.28.0.10
     depends_on:
       - backend
+
+networks:
+  tcgnet:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

@@ -11,6 +11,10 @@ import { AuthUser } from './types';
 interface AuthContextValue {
   user: AuthUser;
   logout: () => void;
+  /** false für die "viewer"-Rolle — Frontend blendet Schreibaktionen dann aus.
+   * Die eigentliche Durchsetzung passiert im Backend (`blockWriteForViewer`),
+   * das hier ist nur UX-Politur gegen verwirrende 403-Fehler. */
+  canEdit: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -42,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   if (checking) return null;
   if (!user) return <LoginPage onLoggedIn={(u) => setUser(u)} />;
 
-  return <AuthContext.Provider value={{ user, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, logout, canEdit: user.role !== 'viewer' }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

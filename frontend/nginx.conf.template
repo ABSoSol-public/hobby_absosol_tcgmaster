@@ -1,0 +1,71 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # nginx protokolliert standardmäßig jeden einzelnen Request (Access-Log,
+    # per Default nach stdout) — bei jedem Kartenbild und jeder API-Anfrage
+    # (beide laufen über diesen Container, siehe /images/ und /api/ unten)
+    # erzeugt das mehrere tausend nutzlose Log-Zeilen pro Tag. Analog zum
+    # `disableRequestLogging` im Backend hier abgeschaltet; echte Fehler
+    # (502 vom Backend, Config-Fehler, …) laufen über das davon unabhängige
+    # `error_log` und bleiben sichtbar.
+    access_log off;
+
+    # Optionaler Zwang auf HTTPS, wenn vor diesem Container ein TLS-terminierender
+    # Reverse Proxy steht (der X-Forwarded-Proto setzt, siehe docs/DEPLOYMENT-SYNOLOGY.md
+    # Abschnitt 10). Default aus (leerer FORCE_HTTPS-Wert), damit ein reiner
+    # LAN-HTTP-Betrieb ohne Reverse Proxy weiterhin ohne Weiteres funktioniert.
+    # $http_x_forwarded_proto ist eine echte nginx-Variable (kein Env-Var) und
+    # bleibt von envsubst unangetastet.
+    set $do_redirect "";
+    if ($http_x_forwarded_proto != "https") {
+        set $do_redirect "${FORCE_HTTPS}yes";
+    }
+    if ($do_redirect = "trueyes") {
+        return 301 https://$host$request_uri;
+    }
+
+    # Statische Assets ausliefern, SPA-Routing per Fallback auf index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # index.html referenziert die inhaltsbasiert benannten JS/CSS-Dateien unten
+    # und muss deshalb bei jedem Laden neu geprüft werden (sonst bekommen
+    # Browser mit eigener Heuristik-Cache-Logik bei fehlendem Cache-Control
+    # teils tagelang eine veraltete index.html mit Verweisen auf längst
+    # ersetzte Bundles — ohne Fehler, einfach nur alte Funktionsstände).
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # Von Vite inhaltsbasiert benannte Dateien (Hash im Dateinamen ändert sich
+    # bei jeder inhaltlichen Änderung) — dürfen daher unbegrenzt lange und ohne
+    # erneute Prüfung gecacht werden.
+    location ^~ /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # API-Anfragen an das Backend weiterreichen — Frontend kennt nur /api,
+    # nie die interne Backend-Adresse.
+    location /api/ {
+        proxy_pass http://backend:3001/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_read_timeout 300s;
+    }
+
+    # Lokal gespiegelte Kartenbilder (liegen im Backend-Container unter IMAGES_DIR).
+    # Kein Zugriff auf externe Bildquellen — Hotlinking ist nicht erlaubt.
+    location /images/ {
+        proxy_pass http://backend:3001/images/;
+        proxy_set_header Host $host;
+        proxy_cache_valid 200 7d;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { useGame } from '../game';
 import { useLanguage } from '../i18n';
 import { CollectionStats, ImageJob, ImportJob } from '../types';
@@ -10,6 +11,7 @@ import { CollectionStats, ImageJob, ImportJob } from '../types';
 const IMPORTABLE = new Set(['yugioh', 'pokemon', 'magic', 'lorcana', 'riftbound']);
 
 export default function Dashboard() {
+  const { canEdit } = useAuth();
   const { t, locale } = useLanguage();
   const { game, games, reloadGames } = useGame();
   const euro = (n: number) => n.toLocaleString(locale, { style: 'currency', currency: 'EUR' });
@@ -126,13 +128,15 @@ export default function Dashboard() {
           <p className="muted">{t('dash_catalog_empty')}</p>
         )}
         <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            className="btn primary"
-            onClick={() => startImport(game)}
-            disabled={!IMPORTABLE.has(game) || importing !== null || job?.status === 'running'}
-          >
-            {job?.status === 'running' ? t('dash_import_running') : t('dash_import_start')}
-          </button>
+          {canEdit && (
+            <button
+              className="btn primary"
+              onClick={() => startImport(game)}
+              disabled={!IMPORTABLE.has(game) || importing !== null || job?.status === 'running'}
+            >
+              {job?.status === 'running' ? t('dash_import_running') : t('dash_import_start')}
+            </button>
+          )}
           {job && (
             <span className="muted">
               {t('dash_import_last')} {job.status === 'running' ? '⏳' : job.status === 'completed' ? '✅' : '❌'}{' '}
@@ -146,13 +150,15 @@ export default function Dashboard() {
       <div className="panel">
         <p className="muted">{t('dash_images_hint')}</p>
         <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            className="btn primary"
-            onClick={() => startImageDownload(game)}
-            disabled={downloadingImages || imageJob?.status === 'running'}
-          >
-            {imageJob?.status === 'running' ? t('dash_images_running') : t('dash_images_start')}
-          </button>
+          {canEdit && (
+            <button
+              className="btn primary"
+              onClick={() => startImageDownload(game)}
+              disabled={downloadingImages || imageJob?.status === 'running'}
+            >
+              {imageJob?.status === 'running' ? t('dash_images_running') : t('dash_images_start')}
+            </button>
+          )}
           {imageJob && (
             <span className="muted">
               {t('dash_images_last')}{' '}
@@ -178,13 +184,15 @@ export default function Dashboard() {
                 <td>{g.collectedCount.toLocaleString(locale)}</td>
                 <td style={{ textAlign: 'right' }}>
                   {IMPORTABLE.has(g.code) ? (
-                    <button
-                      className="btn small"
-                      disabled={importing !== null || job?.status === 'running'}
-                      onClick={() => startImport(g.code)}
-                    >
-                      {importing === g.code ? '⏳' : t('dash_games_import')}
-                    </button>
+                    canEdit && (
+                      <button
+                        className="btn small"
+                        disabled={importing !== null || job?.status === 'running'}
+                        onClick={() => startImport(g.code)}
+                      >
+                        {importing === g.code ? '⏳' : t('dash_games_import')}
+                      </button>
+                    )
                   ) : (
                     <span className="muted" style={{ fontSize: 13 }}>{t('dash_games_no_importer')}</span>
                   )}

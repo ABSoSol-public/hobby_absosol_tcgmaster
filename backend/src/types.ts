@@ -42,6 +42,8 @@ export interface CardPrint {
   rarity: string | null;
   rarity_code: string | null;
   market_price: string | null;
+  currency: string;
+  marketplace_url: string | null;
 }
 
 export interface CollectionItem {

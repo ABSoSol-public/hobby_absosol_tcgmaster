@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { GameImporter, ImportOptions, ImportStats } from './types';
-import { chunked, fetchJson, hashOf } from './util';
+import { chunked, fetchDotggCardmarketPrices, fetchJson, hashOf, recordPriceHistory } from './util';
 
 // Datenquelle: lorcanajson.org — ein statisches JSON pro Sprache, kein API-Key nötig.
 const FILES_BASE = 'https://lorcanajson.org/files/current';
@@ -32,6 +32,9 @@ interface LorcanaCard {
   story?: string;
   fullText?: string;
   images?: { full?: string; thumbnail?: string };
+  // Kein Preis in der Quelle, aber ein fertiger Direktlink zur Cardmarket-
+  // Produktseite dieser konkreten Karte (= unser Print, 1:1 in dieser Quelle).
+  externalLinks?: { cardmarketUrl?: string };
 }
 
 interface LorcanaFile {
@@ -146,17 +149,35 @@ export const lorcanaImporter: GameImporter = {
     }
     onProgress(`Karten: ${changedCardRows.length} von ${cardRowsAll.length} geändert/neu.`);
 
-    // 3) Prints (1 Print je Karte: Set + Nummer + Seltenheit; keine Preise in der Quelle)
+    // Cardmarket-Preise über die freie dotgg.gg-API — lorcanajson.org selbst
+    // liefert nur den Direktlink (s. o.), keinen Preis. Schlüssel dort:
+    // "{Set-Code}-{Sammelnummer}", beide dreistellig mit führenden Nullen
+    // (z. B. "001-001"), per Live-Abgleich der Cardmarket-Produkt-ID verifiziert.
+    onProgress('Lade Cardmarket-Preise (dotgg.gg) …');
+    const cmPrices = await fetchDotggCardmarketPrices('lorcana');
+    onProgress(`${cmPrices.size} Cardmarket-Preise empfangen.`);
+
+    // 3) Prints (1 Print je Karte: Set + Nummer + Seltenheit)
     const cardIdByExternal = new Map(
       (await db('cards').where('game_id', game.id).select('id', 'external_id')).map((r) => [r.external_id, r.id])
     );
-    const existingPrintHashes = new Map(
+    const existingPrints = new Map(
       (
         await db('card_prints')
           .join('cards', 'card_prints.card_id', 'cards.id')
           .where('cards.game_id', game.id)
-          .select('card_prints.card_id', 'card_prints.set_id', 'card_prints.collector_number', 'card_prints.rarity', 'card_prints.content_hash')
-      ).map((r) => [`${r.card_id}|${r.set_id}|${r.collector_number}|${r.rarity}`, r.content_hash])
+          .select(
+            'card_prints.card_id',
+            'card_prints.set_id',
+            'card_prints.collector_number',
+            'card_prints.rarity',
+            'card_prints.content_hash',
+            'card_prints.market_price'
+          )
+      ).map((r) => [
+        `${r.card_id}|${r.set_id}|${r.collector_number}|${r.rarity}`,
+        { hash: r.content_hash as string | null, price: r.market_price == null ? null : Number(r.market_price) },
+      ])
     );
 
     const printRowsAll: { key: string; row: Record<string, unknown> }[] = [];
@@ -166,7 +187,14 @@ export const lorcanaImporter: GameImporter = {
       if (!cardId || !setId) continue;
       const collectorNumber = c.number != null ? String(c.number) : null;
       const rarity = c.rarity || null;
-      const contentHash = hashOf({ rarity_code: null, market_price: null });
+      const dotggKey = `${String(c.setCode ?? '').padStart(3, '0')}-${String(c.number ?? '').padStart(3, '0')}`;
+      const cm = cmPrices.get(dotggKey);
+      const marketPrice = cm?.price ?? null;
+      // lorcanajson liefert den Link zuverlässiger je Karte als dotgg (das
+      // matcht nur, wenn die Nummern-Schlüssel exakt passen) — dotgg nur als
+      // Fallback, falls lorcanajson für diese Karte ausnahmsweise keinen hat.
+      const marketplaceUrl = c.externalLinks?.cardmarketUrl || cm?.url || null;
+      const contentHash = hashOf({ rarity_code: null, market_price: marketPrice, marketplace_url: marketplaceUrl, currency: 'EUR' });
       printRowsAll.push({
         key: `${cardId}|${setId}|${collectorNumber}|${rarity}`,
         row: {
@@ -175,19 +203,45 @@ export const lorcanaImporter: GameImporter = {
           collector_number: collectorNumber,
           rarity,
           rarity_code: null,
-          market_price: null,
+          market_price: marketPrice,
+          currency: 'EUR',
+          marketplace_url: marketplaceUrl,
           content_hash: contentHash,
         },
       });
     }
     const changedPrintRows = printRowsAll
-      .filter((p) => existingPrintHashes.get(p.key) !== (p.row.content_hash as string))
+      .filter((p) => existingPrints.get(p.key)?.hash !== (p.row.content_hash as string))
       .map((p) => p.row);
     for (const chunk of chunked(changedPrintRows)) {
       await db('card_prints')
         .insert(chunk)
         .onConflict(['card_id', 'set_id', 'collector_number', 'rarity'])
-        .merge(['rarity_code', 'market_price', 'content_hash']);
+        .merge(['rarity_code', 'market_price', 'currency', 'marketplace_url', 'content_hash']);
+    }
+
+    // Preis-Historie: Snapshot für alle Prints, deren Preis neu ist oder sich geändert hat.
+    const priceChanged = printRowsAll.filter((p) => {
+      const newPrice = p.row.market_price as number | null;
+      if (newPrice == null) return false;
+      const before = existingPrints.get(p.key);
+      return !before || before.price !== newPrice;
+    });
+    if (priceChanged.length) {
+      const idByKey = new Map(
+        (
+          await db('card_prints')
+            .join('cards', 'card_prints.card_id', 'cards.id')
+            .where('cards.game_id', game.id)
+            .select('card_prints.id', 'card_prints.card_id', 'card_prints.set_id', 'card_prints.collector_number', 'card_prints.rarity')
+        ).map((r) => [`${r.card_id}|${r.set_id}|${r.collector_number}|${r.rarity}`, r.id as number])
+      );
+      const written = await recordPriceHistory(
+        priceChanged.map((p) => ({ print_id: idByKey.get(p.key) || 0, price: p.row.market_price as number })),
+        'dotgg',
+        'EUR'
+      );
+      onProgress(`Preis-Historie: ${written} Snapshots geschrieben.`);
     }
 
     if (remoteVersion) {

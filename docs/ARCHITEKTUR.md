@@ -23,8 +23,13 @@ Das System besteht aus drei klar getrennten Schichten, die ausschließlich über
 │  Schema: tcg_collection                                 │
 └─────────────────────────────────────────────────────────┘
 
-Externe Quelle: YGOPRODeck-API (https://db.ygoprodeck.com/api/v7/)
-→ wird nur vom Backend-Importer aufgerufen, nie vom Frontend.
+Externe Quellen (je ein Importer unter backend/src/services/importers/):
+YGOPRODeck (yugioh), Scryfall (magic), pokemontcg.io (pokemon),
+lorcanajson.org (lorcana), riftcodex.com (riftbound) — plus zwei
+spielübergreifende Zusatzquellen: dotgg.gg (Cardmarket-Preise/-Links für
+Lorcana/Riftbound, siehe DATENBANK.md) und api.frankfurter.app
+(USD→EUR-Kurs für Sammlungswert-Summen, services/exchangeRate.ts).
+→ werden ausschließlich vom Backend aufgerufen, nie vom Frontend.
 ```
 
 ## Technologie-Entscheidungen
@@ -36,7 +41,7 @@ Externe Quelle: YGOPRODeck-API (https://db.ygoprodeck.com/api/v7/)
 | DB-Zugriff | Knex (Query-Builder + Migrationen) | Reines JavaScript ohne native Binär-Engines → läuft auf jeder Synology-CPU (x86_64 und ARM). Migrationen sind versioniert und nachvollziehbar. |
 | Frontend | React + Vite | Industriestandard, schneller Build, einfache Erweiterbarkeit. Ausgeliefert als statische Dateien über nginx. |
 | API-Stil | REST + JSON, versioniert (`/api/v1`) | Einfach zu dokumentieren und zu testen; Frontend und zukünftige Clients (z. B. App) nutzen dieselbe Schnittstelle. |
-| Kartendaten | YGOPRODeck-Import | Kompletter Yu-Gi-Oh!-Katalog inkl. Sets, Rarities, Bilder und Preisen; kostenlos, ohne API-Key. |
+| Kartendaten | je Spiel ein eigener Importer (YGOPRODeck, Scryfall, pokemontcg.io, riftcodex.com, lorcanajson.org) | Alle 5 unterstützten Spiele (Yu-Gi-Oh!, Magic, Pokémon, Riftbound, Lorcana) inkl. Sets, Rarities, Bilder und — wo verfügbar — Preisen; alle Quellen kostenlos, meist ohne API-Key nötig. Details je Quelle: [ROADMAP.md](ROADMAP.md#weitere-spiele). |
 
 ## Multi-TCG-Konzept
 
@@ -90,6 +95,8 @@ frontend/
 │   ├── types.ts             # geteilte TypeScript-Typen der API
 │   ├── pages/               # Dashboard, Karten, Kartendetail, Sets, Setdetail, Sammlung
 │   └── components/          # Kartenraster, Suchleiste, Sammlungs-Dialog, …
-├── nginx.conf               # statische Auslieferung + /api-Proxy
+├── nginx.conf.template      # statische Auslieferung + /api-Proxy (envsubst-Template, s. u.)
 └── Dockerfile               # Multi-Stage: Vite-Build → nginx
 ```
+
+**`nginx.conf.template`**: kein statisches `nginx.conf`, sondern ein Template, das das offizielle nginx-Image beim Container-Start per `envsubst` verarbeitet (`${FORCE_HTTPS}`-Platzhalter, siehe `docs/DEPLOYMENT-SYNOLOGY.md` Abschnitt 10) — echte nginx-Variablen wie `$host` bleiben dabei unangetastet, da sie keine echten Environment-Variablen sind. Zwei Cache-Regeln sind bewusst gesetzt: `index.html` bekommt `Cache-Control: no-cache` (wird bei jedem Laden neu geprüft, sonst können Browser sie über Wochen aus eigener Heuristik-Cache-Logik ungeprüft behalten und so veraltete JS-Bundle-Verweise ausliefern), die von Vite inhaltsbasiert benannten Dateien unter `/assets/` bekommen dagegen `Cache-Control: public, max-age=31536000, immutable` (der Dateiname ändert sich ja bei jeder inhaltlichen Änderung, unbegrenztes Caching ist daher gefahrlos).

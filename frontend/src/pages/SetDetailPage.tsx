@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import AddToCollectionModal from '../components/AddToCollectionModal';
 import CardImage from '../components/CardImage';
 import RemoveFromCollectionModal from '../components/RemoveFromCollectionModal';
@@ -13,15 +14,29 @@ function printName(p: { card_name?: string; card_name_de?: string | null }, lang
 
 export default function SetDetailPage() {
   const { id } = useParams();
+  const { canEdit } = useAuth();
   const { lang, t, locale } = useLanguage();
   const [set, setSet] = useState<SetDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modalPrint, setModalPrint] = useState<Print | null>(null);
   const [removePrint, setRemovePrint] = useState<Print | null>(null);
   const [onlyMissing, setOnlyMissing] = useState(false);
+  const [busyPrintId, setBusyPrintId] = useState<number | null>(null);
 
-  const euro = (v: string | null | undefined) =>
-    v ? Number(v).toLocaleString(locale, { style: 'currency', currency: 'EUR' }) : '—';
+  async function quickAdjust(printId: number, action: 'add' | 'remove') {
+    setBusyPrintId(printId);
+    try {
+      await (action === 'add' ? api.quickAddOne(printId) : api.quickRemoveOne(printId));
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusyPrintId(null);
+    }
+  }
+
+  const euro = (v: string | null | undefined, currency = 'EUR') =>
+    v ? Number(v).toLocaleString(locale, { style: 'currency', currency }) : '—';
 
   const load = useCallback(() => {
     api.set(id!).then((r) => setSet(r.data)).catch((err) => setError(err.message));
@@ -75,18 +90,50 @@ export default function SetDetailPage() {
                 <td>{p.collector_number}</td>
                 <td><Link to={`/cards/${p.card_id}`} state={navState}>{printName(p, lang)}</Link></td>
                 <td>{p.rarity}</td>
-                <td>{euro(p.market_price)}</td>
+                <td>
+                  {euro(p.market_price, p.currency)}
+                  {p.marketplace_url && (
+                    <>
+                      {' '}
+                      <a href={p.marketplace_url} target="_blank" rel="noopener noreferrer" title={t('price_marketplace_link')}>↗</a>
+                    </>
+                  )}
+                </td>
                 <td>
                   {(p.ownedQuantity || 0) > 0
                     ? <strong style={{ color: 'var(--green)' }}>{p.ownedQuantity}×</strong>
                     : <span className="muted">—</span>}
                 </td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <button className="btn small primary" onClick={() => setModalPrint(p)}>{t('add_to_collection')}</button>
-                  {(p.ownedQuantity || 0) > 0 && (
+                  {canEdit && (
                     <>
-                      {' '}
-                      <button className="btn small danger" onClick={() => setRemovePrint(p)}>{t('remove_from_collection')}</button>
+                      <button
+                        className="btn small"
+                        disabled={busyPrintId === p.id}
+                        title={t('quick_add_one')}
+                        onClick={() => quickAdjust(p.id, 'add')}
+                      >
+                        {t('quick_add_one')}
+                      </button>{' '}
+                      {(p.ownedQuantity || 0) > 0 && (
+                        <>
+                          <button
+                            className="btn small"
+                            disabled={busyPrintId === p.id}
+                            title={t('quick_remove_one')}
+                            onClick={() => quickAdjust(p.id, 'remove')}
+                          >
+                            {t('quick_remove_one')}
+                          </button>{' '}
+                        </>
+                      )}
+                      <button className="btn small primary" onClick={() => setModalPrint(p)}>{t('add_to_collection')}</button>
+                      {(p.ownedQuantity || 0) > 0 && (
+                        <>
+                          {' '}
+                          <button className="btn small danger" onClick={() => setRemovePrint(p)}>{t('remove_from_collection')}</button>
+                        </>
+                      )}
                     </>
                   )}
                 </td>

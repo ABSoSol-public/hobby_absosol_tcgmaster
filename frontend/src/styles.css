@@ -319,3 +319,4 @@ td img.thumb { width: 36px; border-radius: 3px; display: block; }
 .error-banner { background: rgba(224, 92, 92, 0.12); border: 1px solid var(--red); color: var(--red); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
 .empty { text-align: center; color: var(--text-dim); padding: 48px 0; }
 .badge-1st { color: var(--accent); font-size: 12px; font-weight: 700; }
+.badge-viewer { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }

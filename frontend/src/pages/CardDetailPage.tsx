@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import AddToCollectionModal from '../components/AddToCollectionModal';
 import CardImage from '../components/CardImage';
 import PriceHistoryChart from '../components/PriceHistoryChart';
@@ -24,6 +25,7 @@ function deVariantHint(collectorNumber: string | null | undefined, hasGermanRele
 
 export default function CardDetailPage() {
   const { id } = useParams();
+  const { canEdit } = useAuth();
   const { lang, t, locale } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
@@ -33,6 +35,19 @@ export default function CardDetailPage() {
   const [modalPrint, setModalPrint] = useState<Print | null>(null);
   const [removePrint, setRemovePrint] = useState<Print | null>(null);
   const [historyPrintId, setHistoryPrintId] = useState<number | null>(null);
+  const [busyPrintId, setBusyPrintId] = useState<number | null>(null);
+
+  async function quickAdjust(printId: number, action: 'add' | 'remove') {
+    setBusyPrintId(printId);
+    try {
+      await (action === 'add' ? api.quickAddOne(printId) : api.quickRemoveOne(printId));
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusyPrintId(null);
+    }
+  }
 
   // Blätter-Kontext: Position der aktuellen Karte in der Herkunftsliste
   const ids = navState?.cardIds || [];
@@ -57,8 +72,8 @@ export default function CardDetailPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [prevId, nextId, modalPrint, removePrint, goTo]);
 
-  const euro = (v: string | null | undefined) =>
-    v ? Number(v).toLocaleString(locale, { style: 'currency', currency: 'EUR' }) : '—';
+  const euro = (v: string | null | undefined, currency = 'EUR') =>
+    v ? Number(v).toLocaleString(locale, { style: 'currency', currency }) : '—';
 
   const load = useCallback(() => {
     api.card(id!).then((r) => setCard(r.data)).catch((err) => setError(err.message));
@@ -148,7 +163,15 @@ export default function CardDetailPage() {
                           )}
                         </td>
                         <td>{p.rarity}</td>
-                        <td>{euro(p.market_price)}</td>
+                        <td>
+                          {euro(p.market_price, p.currency)}
+                          {p.marketplace_url && (
+                            <>
+                              {' '}
+                              <a href={p.marketplace_url} target="_blank" rel="noopener noreferrer" title={t('price_marketplace_link')}>↗</a>
+                            </>
+                          )}
+                        </td>
                         <td>{owned > 0 ? <strong style={{ color: 'var(--green)' }}>{owned}×</strong> : <span className="muted">—</span>}</td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                           <button
@@ -159,11 +182,35 @@ export default function CardDetailPage() {
                           >
                             {t('price_history_toggle')}
                           </button>{' '}
-                          <button className="btn small primary" onClick={() => setModalPrint(p)}>{t('add_to_collection')}</button>
-                          {owned > 0 && (
+                          {canEdit && (
                             <>
-                              {' '}
-                              <button className="btn small danger" onClick={() => setRemovePrint(p)}>{t('remove_from_collection')}</button>
+                              <button
+                                className="btn small"
+                                disabled={busyPrintId === p.id}
+                                title={t('quick_add_one')}
+                                onClick={() => quickAdjust(p.id, 'add')}
+                              >
+                                {t('quick_add_one')}
+                              </button>{' '}
+                              {owned > 0 && (
+                                <>
+                                  <button
+                                    className="btn small"
+                                    disabled={busyPrintId === p.id}
+                                    title={t('quick_remove_one')}
+                                    onClick={() => quickAdjust(p.id, 'remove')}
+                                  >
+                                    {t('quick_remove_one')}
+                                  </button>{' '}
+                                </>
+                              )}
+                              <button className="btn small primary" onClick={() => setModalPrint(p)}>{t('add_to_collection')}</button>
+                              {owned > 0 && (
+                                <>
+                                  {' '}
+                                  <button className="btn small danger" onClick={() => setRemovePrint(p)}>{t('remove_from_collection')}</button>
+                                </>
+                              )}
                             </>
                           )}
                         </td>

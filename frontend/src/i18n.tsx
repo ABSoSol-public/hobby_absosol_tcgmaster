@@ -12,6 +12,7 @@ const dict = {
   auth_login_button: { de: 'Anmelden', en: 'Sign in' },
   auth_logging_in: { de: 'Melde an …', en: 'Signing in …' },
   auth_logout: { de: 'Abmelden', en: 'Sign out' },
+  auth_role_viewer: { de: 'nur lesen', en: 'read only' },
 
   nav_dashboard: { de: 'Übersicht', en: 'Dashboard' },
   nav_cards: { de: 'Karten', en: 'Cards' },
@@ -27,6 +28,12 @@ const dict = {
   },
   glossary_search_placeholder: { de: 'Begriff suchen …', en: 'Search terms …' },
   glossary_empty: { de: 'Kein Begriff gefunden.', en: 'No term found.' },
+  glossary_rarities_heading: { de: 'Seltenheit erkennen', en: 'How to recognize rarity' },
+  glossary_rarities_intro: {
+    de: 'Woran man die Seltenheitsstufe einer physischen Karte erkennt (Folie/Symbol/Rahmen), sortiert von häufig zu selten.',
+    en: 'How to tell a physical card’s rarity tier apart (foil/symbol/frame), ordered from common to rare.',
+  },
+  glossary_terms_heading: { de: 'Community-Jargon', en: 'Community jargon' },
 
   decks_title: { de: 'Decks', en: 'Decks' },
   decks_empty: { de: 'Noch keine Decks. Lege eins an oder importiere eine YDK-Datei.', en: 'No decks yet. Create one or import a YDK file.' },
@@ -155,6 +162,7 @@ const dict = {
   card_number_de_hint: { de: 'dt. vermutlich', en: 'DE presumably' },
   col_rarity: { de: 'Seltenheit', en: 'Rarity' },
   col_price: { de: 'Preis', en: 'Price' },
+  price_marketplace_link: { de: 'Bei Cardmarket ansehen', en: 'View on Cardmarket' },
   col_owned: { de: 'Besitz', en: 'Owned' },
   col_card: { de: 'Karte', en: 'Card' },
   col_condition: { de: 'Zustand', en: 'Condition' },
@@ -165,6 +173,8 @@ const dict = {
 
   add_to_collection: { de: '+ Sammlung', en: '+ Collection' },
   remove_from_collection: { de: '− Sammlung', en: '− Collection' },
+  quick_add_one: { de: '+1', en: '+1' },
+  quick_remove_one: { de: '−1', en: '−1' },
   remove_modal_title: { de: 'Aus der Sammlung entfernen', en: 'Remove from collection' },
   remove_one: { de: '−1', en: '−1' },
   remove_entry: { de: 'Eintrag löschen', en: 'Delete entry' },
@@ -187,6 +197,15 @@ const dict = {
 
   coll_title: { de: 'Meine Sammlung', en: 'My collection' },
   coll_search_placeholder: { de: 'In der Sammlung suchen …', en: 'Search collection …' },
+  coll_sort_newest: { de: 'Zuletzt hinzugefügt', en: 'Recently added' },
+  coll_sort_oldest: { de: 'Zuerst hinzugefügt', en: 'Oldest added' },
+  coll_sort_name: { de: 'Name (A–Z)', en: 'Name (A–Z)' },
+  coll_sort_quantity: { de: 'Menge (meiste zuerst)', en: 'Quantity (most first)' },
+  coll_sort_value: { de: 'Wert (höchster zuerst)', en: 'Value (highest first)' },
+  coll_filter_all_games: { de: 'Alle Spiele', en: 'All games' },
+  coll_filter_all_conditions: { de: 'Alle Zustände', en: 'All conditions' },
+  coll_filter_all_languages: { de: 'Alle Sprachen', en: 'All languages' },
+  coll_filter_first_edition: { de: 'Nur 1. Auflage', en: '1st edition only' },
   coll_loading: { de: 'Lade Sammlung …', en: 'Loading collection …' },
   coll_empty: { de: 'Noch nichts gesammelt. Öffne eine Karte oder ein Set und klicke „+ Sammlung“.', en: 'Nothing collected yet. Open a card or set and click "+ Collection".' },
   coll_confirm_delete: { de: 'wirklich löschen?', en: 'really delete?' },
@@ -212,6 +231,8 @@ const dict = {
   scan_take_photo: { de: 'Foto aufnehmen', en: 'Take photo' },
   scan_use_webcam: { de: 'Webcam verwenden', en: 'Use webcam' },
   scan_capture: { de: 'Aufnehmen', en: 'Capture' },
+  scan_focus: { de: '🔍 Fokussieren', en: '🔍 Focus' },
+  scan_focusing: { de: 'Fokussiere …', en: 'Focusing …' },
   scan_crop_hint: {
     de: 'Ziehe ein Rechteck eng um Set-Code/Sammelnummer — je enger und schärfer der Ausschnitt, desto besser die Erkennung.',
     en: 'Drag a rectangle tightly around the set code/collector number — the tighter and sharper the crop, the better the recognition.',

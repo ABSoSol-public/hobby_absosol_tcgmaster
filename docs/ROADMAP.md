@@ -1,7 +1,14 @@
 # Roadmap
 
-## v1 — Yu-Gi-Oh! (aktuell in Umsetzung)
+**Aktuelle Version: 1.11** — Multi-TCG-Kartenverwaltung für 5 Spiele (Yu-Gi-Oh!, Pokémon, Magic, Riftbound, Lorcana), Sammlung (inkl. Sortierung/Filter/Schnellerfassung), Deck-Builder, Foto-Scan, Preis-Historie (Cardmarket-EUR bei Magic/Pokémon/Lorcana/Riftbound, TCGPlayer-USD bei Yu-Gi-Oh! mit automatischer EUR-Umrechnung in Sammlungswert-Summen — Details in [docs/DATENBANK.md](DATENBANK.md#preise-währung-und-marktplatz-links-card_printsmarket_pricecurrencymarketplace_url)), Authentifizierung, produktiver Live-Betrieb inkl. HTTPS und Security-Härtung, Glossar (inkl. Raritäts-Erkennung). Kompletter Funktionsumfang unten unter „Bis Version 1.11".
 
+Versionsschema ab hier: kleine, thematisch geschnittene Minor-Releases (1.9, 1.10, …), ein größerer Sprung auf 2.0 dort, wo eine echte Architekturänderung ansteht (Mehrbenutzer-Trennung).
+
+## Bis Version 1.11 (aktueller Stand)
+
+Frühere Arbeit ist nicht einzeln durchnummeriert (kein durchgehendes Versionstagging vor 1.8) — alles unten ist bereits produktiv im Einsatz.
+
+### Kern
 - [x] Multi-TCG-Datenbankschema
 - [x] REST-API (Karten, Sets, Prints, Sammlung, Statistiken)
 - [x] YGOPRODeck-Importer (Karten, Sets, Rarities, Bilder-URLs, Preise)
@@ -9,8 +16,7 @@
 - [x] Docker-Deployment für Synology
 - [x] Live-Gang: Container laufen produktiv auf einer Synology (`docker compose up -d --build`, Health-Check + Login end-to-end verifiziert). Bekannte Synology-Stolpersteine (setuid-`rsync` blockiert den `--server`-Modus, `sudo`/`docker-compose`-Eigenheit älterer DSM-Docker-Pakete) sind in [docs/DEPLOYMENT-SYNOLOGY.md](DEPLOYMENT-SYNOLOGY.md) dokumentiert.
 
-## v1.x — Komfort
-
+### Komfort
 - [x] Delta-Import (Versions-Check + Content-Hash je Karte/Print, `npm run import:delta`, Cron-fähig über `cron-delta-import.sh`)
 - [x] Deutschsprachige Kartennamen/-texte (YGOPRODeck `language=de`-Import, befüllt `name_de`/`card_text_de`; Frontend zeigt sie automatisch bevorzugt an. Nicht jede Karte hat eine deutsche TCG-Ausgabe — dann bleibt das Feld `null` und die englische Version wird angezeigt.)
 - [x] Sprachumschaltung DE/EN im Frontend (UI-Texte + Kartendaten, `frontend/src/i18n.tsx`)
@@ -28,24 +34,24 @@
 - [x] Installierbar als Home-Bildschirm-App: Web-App-Manifest + Hexagon-Icons (192/512/Apple-Touch) unter `frontend/public/`, in `index.html` verlinkt inkl. iOS-Metatags (`apple-mobile-web-app-*`). Bewusst ohne Service Worker/Offline-Cache — die App braucht ohnehin durchgehend die API.
 - [x] Ablaufskripte für Betrieb: `create-user.sh` (Login-Nutzer anlegen/Passwort zurücksetzen, Wrapper um `npm run user:create`) und `backup-db.sh` (DB-Sicherung per `mariadb-dump`/`mysqldump` nach `backups/*.sql.gz`, automatisches Aufräumen alter Backups, Cron-fähig analog `cron-delta-import.sh`). Details in `docs/DEPLOYMENT-SYNOLOGY.md`.
 - [x] Eigene Preis-Snapshots: Formular unter dem Preisverlauf-Chart (`PriceHistoryChart.tsx`) zum Erfassen eigener Preisbeobachtungen (`POST /prints/:id/prices`, `source: "manual"`) inkl. Löschen einzelner eigener Einträge; `card_prints.market_price` wird danach immer auf den zeitlich jüngsten Preis-Historie-Eintrag (egal welcher Quelle) synchronisiert.
-- [x] Foto-Scan beim Erfassen: „📷 Scannen"-Button auf der Sammlungsseite fotografiert die Karte (Handy-Kamera per Datei-Input **oder** Webcam am Rechner per `getUserMedia`, `frontend/src/components/ScanCardModal.tsx`), erkennt Set-Code/Sammelnummer clientseitig per OCR (`tesseract.js`) und matcht sie gegen `card_prints.collector_number` (`GET /games/:code/scan`, s. `docs/API.md`). Bei eindeutigem Treffer direkt weiter zu „Zur Sammlung hinzufügen", bei mehreren Treffern Auswahlliste. Reines Text-Matching (kein Bild-Ähnlichkeitsindex) — funktioniert am besten bei Spielen mit gedrucktem Set-Code (Yu-Gi-Oh!, Magic); bei reiner Nummer (Pokémon, Lorcana, Riftbound) ggf. mehrdeutig. **Achtung Synology-Deployment:** `getUserMedia` (Webcam-Option) funktioniert nur in sicheren Kontexten (HTTPS oder `localhost`) — läuft die App wie aktuell dokumentiert über einfaches HTTP, bleibt nur die Datei-Input-Variante (Handy-Kamera-App) nutzbar, der Webcam-Button blendet sich dann automatisch aus. Für Webcam-Nutzung am Rechner bräuchte es HTTPS vor dem nginx (z. B. Reverse Proxy mit Zertifikat).
+- [x] Foto-Scan beim Erfassen: „📷 Scannen"-Button auf der Sammlungsseite fotografiert die Karte (Handy-Kamera per Datei-Input **oder** Webcam am Rechner per `getUserMedia`, `frontend/src/components/ScanCardModal.tsx`), erkennt Set-Code/Sammelnummer clientseitig per OCR (`tesseract.js`) und matcht sie gegen `card_prints.collector_number` (`GET /games/:code/scan`, s. `docs/API.md`). Bei eindeutigem Treffer direkt weiter zu „Zur Sammlung hinzufügen", bei mehreren Treffern Auswahlliste. Reines Text-Matching (kein Bild-Ähnlichkeitsindex) — funktioniert am besten bei Spielen mit gedrucktem Set-Code (Yu-Gi-Oh!, Magic); bei reiner Nummer (Pokémon, Lorcana, Riftbound) ggf. mehrdeutig.
   - **Nachgezogen**: Bildausschnitt vor der OCR markierbar — nach der Aufnahme zieht man ein Rechteck eng um Set-Code/Sammelnummer, nur dieser (hochskalierte) Ausschnitt geht in die Texterkennung; deutlich bessere Trefferquote als OCR über das ganze Kartenfoto. Voreingestellte Auswahl im unteren Kartenrand, frei verschiebbar/neu aufziehbar (Pointer-Events, klappt mit Maus und Touch), „Ausschnitt zurücksetzen". Schlägt die Erkennung fehl, bleibt Foto+Ausschnitt erhalten statt komplett neu beginnen zu müssen („Ausschnitt anpassen").
   - **Nachgezogen**: manuelle Eingabe als Fallback — Set-Code/Nummer lässt sich auch direkt eintippen (nutzt denselben `GET /games/:code/scan`-Abgleich, kein OCR nötig), erreichbar in jeder Scan-Phase über „Set-Code/Nummer manuell eingeben".
   - **Nachgezogen**: Hinweistext vor der Aufnahme präzisiert, worauf es ankommt (scharf, gut ausgeleuchtet, ohne Spiegelungen, ganze Ecke im Bild).
+  - **Nachgezogen**: OCR-Erkennung verbessert — Bildausschnitt wird vor der Erkennung in Graustufen mit erhöhtem Kontrast umgewandelt (`ctx.filter` auf dem Canvas) statt das Rohfoto direkt an Tesseract zu geben, zusätzlich fester Seitensegmentierungs-Modus `PSM.SINGLE_LINE` (der Ausschnitt enthält ja bewusst nur eine Textzeile). Webcam-Aufnahme fragt jetzt außerdem höhere Auflösung an (mehr echte Bilddetails statt nur hochskaliertes Rauschen) und wo unterstützt (v. a. Android/Chrome) einen kontinuierlichen Autofokus; neuer „🔍 Fokussieren"-Button (nur sichtbar, wenn das Gerät es unterstützt) löst bei Bedarf einen neuen Fokus-Suchlauf aus, falls die Kamera auf den Hintergrund statt die Karte fokussiert hat.
 - [x] Glossar-Seite (`/glossary`, `frontend/src/pages/GlossaryPage.tsx`): Community-Jargon/Schlüsselwörter je Spiel (statische Daten in `frontend/src/glossaryData.ts`, DE/EN), umschaltbar zwischen allen 5 Spielen, mit Suchfeld.
+- [x] Kartensuche erweitert: durchsucht jetzt auch Kartentext (DE/EN) und Sammelnummer (inkl. Sprachkürzel-Wildcard, z. B. findet `MP24-DE174` denselben Print wie `MP24-EN174`); Set-Suche zusätzlich über den Set-Code.
+- [x] DE-Nummernhinweis auf der Kartendetailseite: bei Karten mit bestätigter deutscher Ausgabe (`name_de` gesetzt) zusätzlich abgeleitete deutsche Sammelnummer als Hinweis (Sprachkürzel ersetzt, klar als Ableitung gekennzeichnet — die Quelle liefert keine echten DE-Sammelnummern).
 
-## v2 — Weitere Spiele
-
-Prinzip: pro Spiel ein Importer-Modul + Filter-Konfiguration, **keine Schemaänderung** nötig.
-Frontend hat einen Spielumschalter in der Topbar; Filter kommen generisch aus `backend/src/services/gameConfig.ts`.
-Nach dem ersten erfolgreichen Import wird ein Spiel automatisch `active`.
+### Weitere Spiele
+Prinzip: pro Spiel ein Importer-Modul + Filter-Konfiguration, **keine Schemaänderung** nötig. Frontend hat einen Spielumschalter in der Topbar; Filter kommen generisch aus `backend/src/services/gameConfig.ts`. Nach dem ersten erfolgreichen Import wird ein Spiel automatisch `active`.
 
 | Spiel | Datenquelle | Status |
 |---|---|---|
 | Pokémon TCG | pokemontcg.io v2 (optionaler API-Key `POKEMON_TCG_API_KEY`, kostenlos) | ✅ implementiert (Filter: Typ, Element, Seltenheit; Cardmarket-Preise EUR) |
 | Magic: The Gathering | Scryfall Bulk Data (`default_cards`, streamend geparst) | ✅ implementiert (Filter: Typ, Farbe; EUR-Preise; nur Papier-Prints; keine DE-Texte — dafür wäre die 2,5-GB-`all_cards`-Datei nötig) |
-| Lorcana | lorcanajson.org (DE + EN) | ✅ implementiert (Filter: Typ, Tinte, Kosten; keine Preisquelle) |
-| Riftbound | riftcodex.com (offene REST-API, kein Key nötig) | ✅ implementiert (Filter: Typ, Domain, Seltenheit; DE-Texte über eigene Übersetzungsdatei `riftbound.de.json`, da die API nur Englisch liefert; keine Preisquelle) |
+| Lorcana | lorcanajson.org (DE + EN) | ✅ implementiert (Filter: Typ, Tinte, Kosten; Cardmarket-Preise EUR + Direktlink über `dotgg.gg`, seit Version 1.11) |
+| Riftbound | riftcodex.com (offene REST-API, kein Key nötig) | ✅ implementiert (Filter: Typ, Domain, Seltenheit; DE-Texte über eigene Übersetzungsdatei `riftbound.de.json`, da die API nur Englisch liefert; Cardmarket-Preise EUR + Direktlink über `dotgg.gg`, seit Version 1.11) |
 
 Vorgehen für ein weiteres Spiel:
 1. Importer unter `backend/src/services/importers/<spiel>.ts` implementieren (Interface `GameImporter`) und in `index.ts` registrieren.
@@ -53,24 +59,67 @@ Vorgehen für ein weiteres Spiel:
 3. Spielcode in `IMPORTABLE` in `frontend/src/pages/Dashboard.tsx` eintragen.
 4. Import über das Dashboard laufen lassen — Aktivierung, Sammlung, Sets und Statistiken funktionieren automatisch.
 
-## Ideen / Backlog (noch nicht geplant)
-
-Unsortierte Ideen für spätere Versionen — kein Anspruch auf Vollständigkeit oder Reihenfolge.
-
-### Sammlung & Nutzung
-- [ ] Wunschliste getrennt von der Sammlung (Karten, die man sucht/kaufen will, mit eigener Ansicht statt Notiz nebenher)
-- [ ] Tauschbörse: Karten als „abzugeben" markieren, ggf. mit einer teilbaren Read-only-Ansicht für andere
-- [ ] Mehrbenutzer-Sammlungen: aktuell haben Logins (`users`-Tabelle) getrennte Accounts, aber eine gemeinsame Sammlung — optional pro Nutzer trennbar machen, falls das gewünscht ist
-- [ ] Sammlungs-Statistiken erweitern: Verteilung nach Rarity/Set/Farbe als Diagramm auf dem Dashboard
-
-### Deck-Builder
-- [ ] Mana-/Kosten-Kurve und Farb-/Element-Verteilung als kleines Chart im Deck-Builder
-
-### Daten & Preise
-- [ ] Preis-Alarm: Benachrichtigung (z. B. E-Mail), wenn eine besessene Karte einen Schwellwert über-/unterschreitet
-- [ ] Preisquelle für Lorcana/Riftbound ergänzen, sobald eine verlässliche EUR-Quelle verfügbar ist
-- [ ] Cron-Job für Bild-Downloads analog zum bestehenden Delta-Import-Cron (`cron-delta-import.sh`), damit neue Karten automatisch Bilder bekommen
-
-### Betrieb
-- [x] HTTPS vor dem nginx: DSM-eigener Reverse Proxy + Let's-Encrypt-Zertifikat (Systemsteuerung → Sicherheit/Anmeldeportal), `COOKIE_SECURE=true` gesetzt. Details inkl. zweier Synology-Fallstricke (Port-443-Konflikt mit QuickConnect, `localhost` als Proxy-Ziel) in [docs/DEPLOYMENT-SYNOLOGY.md](DEPLOYMENT-SYNOLOGY.md) Abschnitt 10. Schaltet nebenbei die Webcam-Option des Foto-Scans frei (`getUserMedia`, siehe v1.x-Eintrag oben).
+### Betrieb & Sicherheit
+- [x] HTTPS vor dem nginx: DSM-eigener Reverse Proxy + Let's-Encrypt-Zertifikat (Systemsteuerung → Sicherheit/Anmeldeportal), `COOKIE_SECURE=true` gesetzt. Details inkl. zweier Synology-Fallstricke (Port-443-Konflikt mit QuickConnect, `localhost` als Proxy-Ziel) in [docs/DEPLOYMENT-SYNOLOGY.md](DEPLOYMENT-SYNOLOGY.md) Abschnitt 10. Schaltet nebenbei die Webcam-Option des Foto-Scans frei (`getUserMedia`).
 - [x] Delta-Import-Cron (`cron-delta-import.sh`) als täglicher Zeitplan im DSM-Aufgabenplaner eingerichtet (Nutzer `root`).
+- [x] Security-Härtung: `FORCE_HTTPS` schließt den bis dahin parallel zu HTTPS weiterhin offenen, unverschlüsselten Direktzugriff auf `FRONTEND_PORT` (Redirect via `X-Forwarded-Proto`, siehe `frontend/nginx.conf.template`); Rate-Limiting global (`@fastify/rate-limit`, 300/min) und deutlich strenger auf `/auth/login` (5/min); Security-Header via `@fastify/helmet`; generische Fehlermeldung bei 5xx statt roher `err.message`; Backend-Container läuft als Non-Root (`USER node`), UID/GID für `IMAGES_DIR`-Zugriff bei Bedarf über `BACKEND_UID`/`BACKEND_GID` konfigurierbar (wichtig bei Synology-ACL-beschränkten Freigaben, siehe `docs/DEPLOYMENT-SYNOLOGY.md` Abschnitt 3).
+
+### Version 1.9 — Sammlung: Bearbeitung & Sortierung
+- [x] Bugfix: Das Bearbeiten-Modal der Sammlung (`CollectionPage.tsx` → `EditModal`) erlaubte nur Menge/Zustand/Lagerort/Notizen zu ändern — Sprache, 1. Auflage, Kaufpreis und Erwerbsdatum waren nur beim erstmaligen Hinzufügen (`AddToCollectionModal`) setzbar, obwohl das Backend (`PATCH /collection/:id`) alle Felder längst unterstützte. Modal um die fehlenden Felder ergänzt.
+- [x] Sortierung der Sammlungsliste: zuletzt/zuerst hinzugefügt, Name (A–Z), Menge, Wert (`GET /collection?sort=`).
+- [x] Filter der Sammlungsliste: Spiel, Zustand, Sprache, „Nur 1. Auflage" (`GET /collection?game=&condition=&language=&first_edition=` — der `game`-Parameter existierte serverseitig schon länger, wurde vom Frontend aber nie genutzt, weshalb die Sammlung bisher immer spielübergreifend gemischt angezeigt wurde).
+
+### Version 1.10 — Sammlung: Schnellerfassung & Glossar
+- [x] Schnell-Buttons „+1"/„−1" auf der Set-Detailseite **und** der Kartendetailseite (beide zeigen dieselbe Print-Tabelle mit „Zur Sammlung hinzufügen"/„Entfernen"): Sammlungsmenge je Print direkt in der Tabelle anpassen, ohne den Dialog zu öffnen. Backend: neuer Endpoint `DELETE /collection/by-print/:printId/one` (zieht ein Exemplar vom passenden Eintrag ab — bevorzugt den Standard-Schnell-Hinzufügen-Eintrag NM/DE/1. Auflage, sonst den zuletzt geänderten Eintrag; löscht den Eintrag bei Menge 1). `+1` nutzt den bestehenden `POST /collection`-Merge-Mechanismus.
+- [x] Default „1. Auflage" beim Hinzufügen auf „ja" umgestellt — sowohl im regulären „Zur Sammlung hinzufügen"-Dialog (`AddToCollectionModal.tsx`) als auch beim neuen Schnell-Hinzufügen (immer NM/DE/1. Auflage).
+- [x] Glossar um Raritäts-Erkennung je Spiel erweitert (`frontend/src/glossaryData.ts` → `rarities`): woran man die Seltenheitsstufe einer physischen Karte erkennt (Folie/Symbol/Rahmen), sortiert von häufig zu selten, für alle 5 Spiele (Yu-Gi-Oh! Foil-Stufen, MTG-Symbolfarben, Pokémon-Symbole, Lorcana-Formsymbole, Riftbound-Gem-Formen). Eigener Abschnitt auf der Glossar-Seite oberhalb des bestehenden Jargon-Suchfelds.
+
+### Version 1.11 — Betrieb & Datenqualität
+- [x] Backend-Logs deutlich reduziert: Fastifys automatisches Zugriffslog (eine Zeile pro Request/Response) erzeugte durch den 15-Sekunden-Docker-Healthcheck plus jeden einzelnen Kartenbild-Request mehrere tausend Log-Zeilen pro Tag ohne Mehrwert. `disableRequestLogging: true` in `backend/src/app.ts` gesetzt — echte Fehler (`app.log.error()` im Error-Handler) und Import-/Bild-Download-Fortschritt (`app.log.info()`) bleiben unverändert sichtbar.
+- [x] Frontend-nginx-Logs ebenso reduziert: `/images/` und `/api/` laufen als Proxy durch den Frontend-Container, dessen nginx unabhängig vom Backend-Fix weiterhin jeden Request ins Access-Log schrieb. `access_log off;` in `frontend/nginx.conf.template` ergänzt — `error_log` (z. B. 502 vom Backend) bleibt als separater Mechanismus unverändert aktiv.
+- [x] Backend-Absturzverhalten gehärtet: `process.on('unhandledRejection'/'uncaughtException', …)` in `backend/src/server.ts` — loggt die konkrete Fehlerursache strukturiert über den bestehenden Logger (statt nur einer knappen Node-Warnung auf stderr) und beendet den Prozess danach bewusst kontrolliert; `restart: unless-stopped` startet den Container ohnehin neu, jetzt aber mit nachvollziehbarer Ursache im Log statt eines rätselhaften Neustarts.
+- [x] Bugfix Bild-Spiegelung: `IMAGES_DIR` war in `docker-compose.yml` mit `:ro` gemountet — der Backend-Container braucht denselben Pfad aber auch zum **Schreiben** neuer Kartenbilder (Dashboard-Button „Bilder aktualisieren"/täglicher Cron). Führte zu `EROFS`-Fehlern bei jedem neuen Kartenbild, unabhängig vom Spiel. `:ro` entfernt.
+- [x] Job-Status-Logik der Bild-Spiegelung verfeinert (`backend/src/routes/images.ts`): dauerhaft nicht mehr bei der Quelle verfügbare Bilder (`HTTP 404`, z. B. uralte Pokémon-Promo-Karten) markieren einen Lauf nicht mehr als „failed" — das würde sich durch erneutes Ausführen ohnehin nie ändern. Echte Fehler (Infrastruktur/Netzwerk, z. B. der `EROFS`-Fall oben) lösen weiterhin „failed" aus. Statusmeldung schlüsselt jetzt „echte Fehler" vs. „dauerhaft nicht verfügbar" separat auf.
+- [x] Bugfix Sortierung nach Sammelnummer: Set-Detailseite und CSV-Export sortierten Sammelnummern rein alphabetisch (SQL `ORDER BY` auf einer Textspalte) — dadurch kam „10" vor „2". Neue natürliche Sortierung (`compareCollectorNumbers()` in `backend/src/services/cardNumbers.ts`, nutzt `localeCompare(…, { numeric: true })`) behandelt zusammenhängende Ziffernfolgen als Zahl, auch bei gemischten Formaten wie „SDY-002"/„SDY-010" oder „4/102"/„25/102". Angewendet in `routes/sets.ts` (Set-Detailseite) und `routes/collection.ts` (CSV-Export, dort mit korrektem Spiel/Set-Gruppierungserhalt).
+- [x] Bugfix Yu-Gi-Oh!-Preise (zweistufig, Endstand unten): Der Importer nutzte `card_sets[].set_price` (TCGPlayer, **USD**) als `market_price`, aber die App zeigte überall „€" an — falsches Label. Erster Fix stellte auf `card_prices[0].cardmarket_price` (echtes Cardmarket-EUR) um, das aber nur **einmal je Karte** statt je Print/Rarität existiert — beim Live-Test fiel auf, dass das Common und Secret Rare derselben Karte auf denselben Preis verflacht und den Sammlungswert verfälscht. Da keine freie Quelle beides (Cardmarket-EUR **und** Granularität je Rarität) liefert, **Endstand**: zurück zu `set_price`/USD (echte Rarität-Granularität), jetzt aber über eine neue Spalte `card_prints.currency` (Migration `20260721000002_print_currency.js`) korrekt als `USD` geführt statt es fälschlich als EUR anzuzeigen. Alle 5 Importer setzen `currency` seither explizit (`USD` nur bei Yu-Gi-Oh!, sonst `EUR`) statt sich auf einen impliziten Default zu verlassen.
+- [x] Cardmarket-Direktlinks für Lorcana: `lorcanajson.org` liefert keinen Preis, aber `externalLinks.cardmarketUrl` je Karte. Neue Spalte `card_prints.marketplace_url` (Migration `20260721000001_print_marketplace_url.js`, spielagnostisch — andere Importer können sie künftig ebenfalls befüllen), vom Lorcana-Importer gesetzt. Frontend zeigt bei vorhandenem Link ein „↗"-Icon neben dem Preis (Set- und Kartendetailseite), das zur Cardmarket-Produktseite verlinkt.
+- [x] Riftbound- **und** Lorcana-Cardmarket-**Preise** (nicht nur Links) ergänzt: Nutzer fand `riftbound.gg/prices/`, Recherche ergab, dass das zum etablierten `dotgg.gg`-Netzwerk gehört (DotGG Pty Ltd, betreibt u. a. auch Lorcana.gg/„Pokémon TCG Zone"/„Yu-Gi-Oh! Zone") mit einer frei dokumentierten, öffentlichen REST-API (`dotgg.gg/api/`, kein Key) — `api.dotgg.gg/cgfw/getcards?game=<spiel>` liefert je Karte `cmPrice`/`cmurl` (echter Cardmarket-EUR-Preis + Produktlink). Neuer gemeinsamer Helfer `fetchDotggCardmarketPrices()` in `backend/src/services/importers/util.ts`, best-effort (liefert bei Fehlern eine leere Map statt zu werfen — dotgg ist nur Zusatzquelle, kein Kernbestandteil des Imports). Matching-Schlüssel gegen die eigenen Prints ist spielabhängig formatiert (Riftbound: `{Set-Code}-{Sammelnummer}` unverändert, z. B. „UNL-205"; Lorcana: beide Teile dreistellig mit führenden Nullen, z. B. „001-001") — per Live-Abgleich der Cardmarket-Produkt-ID gegen die jeweilige Primärquelle verifiziert, kein Rätselraten. Alt-Art-/Promo-Prints mit abweichender Nummerierung matchen teils nicht — degradiert dann auf „kein Preis", wie vorher, kein Rückschritt. Preis-Historie läuft für beide Spiele jetzt mit, Quelle `dotgg`, Währung `EUR`. Live gegen die echte DB verifiziert: Riftbound 853/1337 Prints (~64 %), Lorcana 2796/3226 Prints (~87 %) mit Preis versehen.
+- [x] Yu-Gi-Oh!/Magic/Pokémon-Preise ebenfalls live gegen die echte DB geprüft: Magic 83.845/104.033 Prints (~81 %), Pokémon 19.063/20.479 Prints (~92 %) — beide schon vorher korrekt (Scryfall bzw. pokemontcg.io liefern selbst echte Cardmarket-EUR-Preise), kein Handlungsbedarf.
+- [ ] Yu-Gi-Oh!/Magic/Pokémon könnten künftig ebenfalls über dieselbe dotgg-API querverifiziert werden (unabhängige Zweitquelle) — aktuell nicht nötig, da deren Cardmarket-Preise schon direkt aus der jeweiligen Primärquelle kommen.
+- [x] Sammlungswert-Summe/-Sortierung um Währungsumrechnung ergänzt: Seit Yu-Gi-Oh! (USD) neben den übrigen 4 Spielen (EUR) steht, hätte `SUM(quantity * market_price)` sonst USD- und EUR-Beträge einfach addiert. Neuer Helfer `getUsdToEurRate()` (`backend/src/services/exchangeRate.ts`) holt den Kurs von der freien, keylosen EZB-Referenzkurs-API `frankfurter.app`, gecacht 12h, mit hartem Fallback-Kurs bei Nichterreichbarkeit. Eingebaut in `GET /collection/stats` (`marketValue`) und `GET /collection?sort=value` (beide per SQL `IF(currency='USD', ?, 1)` mit gebundenem Kurs-Parameter). Einzelpreise (Karten-/Set-Detailseite, Preisverlauf-Diagramm) bleiben unverändert in ihrer nativen Währung — nur die spielübergreifende Summe/Sortierung rechnet um.
+- **Versionierung**: Nutzer fragte nach dem Cardmarket-Umbau explizit, ob das nicht eine eigene Version wert sei — auf Nachfrage bestätigt: abgespalten von der ursprünglichen „1.10 — Schnellerfassung & Glossar" (die bleibt bei ihrem engeren UX-Thema), diese Betriebs-/Datenqualitäts-Arbeit läuft als eigene **1.11**. Alle nachfolgenden geplanten Versionen rücken entsprechend eine Nummer weiter (Analytics & Insights → 1.12, Komfort & Bedienung → 1.13, Teilen & Community → 1.14).
+
+## Geplante Releases
+
+### Version 1.12 — Analytics & Insights
+- [ ] Sammlungswert-Verlauf: Zeitreihen-Chart des **gesamten** Sammlungswerts (Summe `quantity × market_price` über alle `collection_items`, täglicher Snapshot analog zum bestehenden `price_history`-Mechanismus) — ein Portfolio-Chart statt nur der bestehenden Preis-Historie pro einzelnem Print
+- [ ] Gewinn/Verlust-Anzeige: `purchase_price` vs. aktueller `market_price`, je Karte und aggregiert über die ganze Sammlung ("wie viel steckt drin, was ist es wert")
+- [ ] "Top Mover": Karten mit der größten Preisveränderung (absolut/prozentual) über einen wählbaren Zeitraum — lässt sich direkt aus der vorhandenen `price_history` ableiten, ohne neue Datenquelle
+- [ ] Verteilungs-Diagramme im Dashboard (Rarity/Set/Typ/Element/Farbe) — ließen sich weitgehend generisch aus den bestehenden Filterdefinitionen in `gameConfig.ts` ableiten, analog zum Muster der Karten-Filter
+- [ ] Set-Vervollständigung als Ranking/Heatmap über alle Sets hinweg (statt nur Fortschrittsbalken auf der einzelnen Set-Seite) — "welche Sets sind am nächsten an 100 %"
+- [ ] Jahres-/Monatsrückblick ("Wrapped"-Stil): neue Karten im Zeitraum, ausgegebenes Geld, wertvollster Neuzugang, größter Wertzuwachs
+
+### Version 1.13 — Komfort & Bedienung
+- [ ] Bulk-Aktionen in der Sammlungstabelle (mehrere Zeilen markieren, Zustand/Lagerort/Sprache gemeinsam ändern statt Zeile für Zeile)
+- [ ] Gespeicherte Filter/Suchen ("Presets") auf der Karten- und Sammlungsseite
+- [ ] Mana-/Kosten-Kurve und Farb-/Element-Verteilung als kleines Chart im Deck-Builder
+- [ ] Deck-Versionsvergleich (Diff zweier Speicherstände desselben Decks, z. B. vor/nach einem Banlist-Update)
+- [ ] Foto-Beleg pro Sammlungseintrag (tatsächlicher Zustand der eigenen Karte, getrennt vom Katalog-Kartenbild) — z. B. relevant bei teuren/gegradeten Karten
+
+### Version 1.14 — Teilen & Community
+- [ ] Wunschliste getrennt von der Sammlung (Karten, die man sucht/kaufen will, mit eigener Ansicht statt Notiz nebenher)
+- [ ] Tauschbörse: Karten als „abzugeben" markieren
+- [ ] Read-only Share-Link für Sammlung oder einzelnes Deck ohne Login (z. B. zum Vorzeigen/Tauschen) — ergänzt die Tauschbörsen-Idee
+
+### Version 2.0 — Mehrbenutzer & Benachrichtigungen
+Größerer Architekturschritt (echte Datentrennung zwischen Accounts), daher eigene Major-Version statt eines weiteren 1.x-Schritts.
+- [ ] Mehrbenutzer-Sammlungen: aktuell haben Logins (`users`-Tabelle) getrennte Accounts, aber eine gemeinsame Sammlung — echte Trennung pro Nutzer
+- [ ] Sammlungsvergleich zweier Nutzer ("was hast du, was ich nicht habe") — baut auf der Mehrbenutzer-Trennung auf
+- [ ] Zentrale Benachrichtigungs-Anbindung (E-Mail o. Ä.) als gemeinsame Grundlage für Preis-Alarm, fehlgeschlagene Importe, neu erschienene Sets
+- [ ] Preis-Alarm: Benachrichtigung, wenn eine besessene Karte einen Schwellwert über-/unterschreitet
+
+## Weitere Ideen (noch nicht eingeplant)
+Kleinere Ideen ohne festen Release-Bezug — werden mitgenommen, sobald es thematisch oder zeitlich passt.
+- [ ] Cron-Job für Bild-Downloads analog zum bestehenden Delta-Import-Cron (`cron-delta-import.sh`), damit neue Karten automatisch Bilder bekommen
+- [ ] Marktplatz-Direktlinks (Cardmarket/eBay-Suche vorbefüllt) auch für Yu-Gi-Oh!/Magic/Pokémon auf der Kartendetailseite (bisher nur Lorcana/Riftbound, da deren Quellen den Link mitliefern)
+- [ ] Import aus fremden Sammlungsformaten (z. B. Deckbox-, TCGplayer-CSV) zusätzlich zum eigenen CSV-Format

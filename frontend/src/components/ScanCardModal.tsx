@@ -1,5 +1,5 @@
 import { FormEvent, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
-import { createWorker } from 'tesseract.js';
+import { createWorker, PSM } from 'tesseract.js';
 import { api } from '../api';
 import { useGame } from '../game';
 import { cardName, useLanguage } from '../i18n';
@@ -32,11 +32,27 @@ const MIN_SELECTION = 3; // Prozent — kleinere Ziehgesten zählen als versehen
 // nicht vorhanden. Der Button erscheint dann gar nicht erst statt mit Fehler zu enden.
 const WEBCAM_SUPPORTED = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 
+// Fokus-Steuerung (Teil der Image-Capture-Spec) ist nicht Teil von TypeScripts
+// Standard-DOM-Typen und wird nur von einem Teil der Browser (v. a. Android/Chrome)
+// überhaupt unterstützt — deshalb eigene, minimale Typerweiterung statt "any".
+interface FocusConstraintSet extends MediaTrackConstraintSet {
+  focusMode?: string;
+}
+interface FocusCapabilities extends MediaTrackCapabilities {
+  focusMode?: string[];
+}
+
 function clamp(v: number, min: number, max: number) {
   return Math.min(max, Math.max(min, v));
 }
 
-/** Schneidet den gewählten Bildausschnitt zu und liefert ihn hochskaliert (bessere OCR-Trefferquote bei kleinen Ausschnitten) als PNG-Blob. */
+/**
+ * Schneidet den gewählten Bildausschnitt zu, hochskaliert (bessere OCR-Trefferquote
+ * bei kleinen Ausschnitten) und in Graustufen mit erhöhtem Kontrast — Fotos haben
+ * durch Beleuchtung/Reflexion oft zu wenig Kontrast für zuverlässige Texterkennung,
+ * ein einfacher Kontrast-/Graustufen-Filter hilft Tesseract deutlich mehr als die
+ * reine Auflösung. Liefert das Ergebnis als PNG-Blob.
+ */
 function cropToBlob(img: HTMLImageElement, sel: Selection): Promise<Blob> {
   const sx = (sel.x / 100) * img.naturalWidth;
   const sy = (sel.y / 100) * img.naturalHeight;
@@ -51,6 +67,7 @@ function cropToBlob(img: HTMLImageElement, sel: Selection): Promise<Blob> {
   if (!ctx) return Promise.reject(new Error('Canvas nicht verfügbar'));
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  ctx.filter = 'grayscale(1) contrast(1.6) brightness(1.1)';
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 
   return new Promise((resolve, reject) => {
@@ -82,6 +99,8 @@ export default function ScanCardModal({ onClose, onSaved }: Props) {
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [webcamActive, setWebcamActive] = useState(false);
+  const [focusSupported, setFocusSupported] = useState(false);
+  const [focusing, setFocusing] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(DEFAULT_SELECTION);
   const [rawText, setRawText] = useState('');
@@ -96,6 +115,7 @@ export default function ScanCardModal({ onClose, onSaved }: Props) {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setWebcamActive(false);
+    setFocusSupported(false);
   }
 
   // Kamera-Stream in jedem Fall stoppen, wenn der Dialog verlassen wird — sonst
@@ -112,12 +132,61 @@ export default function ScanCardModal({ onClose, onSaved }: Props) {
   async function startWebcam() {
     setError(null);
     try {
+      // Höhere Zielauflösung: mehr echte Bilddetails für den späteren Zuschnitt,
+      // statt nur eine verwaschene Aufnahme hochzuskalieren. "ideal" statt "exact",
+      // damit Geräte ohne so hohe Auflösung trotzdem einen Stream liefern.
       streamRef.current = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
       });
       setWebcamActive(true);
+
+      // Kontinuierlichen Autofokus anfragen, wo unterstützt (v. a. Android/Chrome —
+      // iOS Safari kennt diese Erweiterung nicht, dann bleibt es beim Kamera-Default).
+      // Best effort: schlägt applyConstraints fehl, einfach ohne explizite
+      // Fokus-Steuerung weitermachen statt den ganzen Scan abzubrechen.
+      const track = streamRef.current.getVideoTracks()[0];
+      const capabilities = track?.getCapabilities?.() as FocusCapabilities | undefined;
+      if (capabilities?.focusMode?.includes('continuous')) {
+        try {
+          await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as FocusConstraintSet] });
+        } catch {
+          // ignorieren — Fokus bleibt dann einfach beim Kamera-Default
+        }
+      }
+      setFocusSupported(!!capabilities?.focusMode?.length);
     } catch (err) {
       setError((err as Error).message);
+    }
+  }
+
+  /**
+   * Erzwingt einen neuen Autofokus-Durchlauf per Tippen auf den "Fokussieren"-Button
+   * — nützlich, wenn die Kamera auf den Hintergrund statt die Karte fokussiert hat.
+   * Kurzer Wechsel auf "single-shot"/"manual" (falls verfügbar) und zurück auf
+   * "continuous" stößt bei den meisten unterstützten Geräten einen frischen
+   * Fokus-Suchlauf an; ist nur "continuous" verfügbar, hilft erneutes Anwenden
+   * derselben Einschränkung oft ebenfalls, einen neuen Suchlauf auszulösen.
+   */
+  async function applyFocus() {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    setFocusing(true);
+    try {
+      const capabilities = track.getCapabilities?.() as FocusCapabilities | undefined;
+      const retrigger = capabilities?.focusMode?.find((m) => m === 'single-shot' || m === 'manual');
+      if (retrigger) {
+        await track.applyConstraints({ advanced: [{ focusMode: retrigger } as FocusConstraintSet] });
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as FocusConstraintSet] });
+    } catch {
+      // Best effort — Kamera bleibt einfach beim vorherigen Fokus
+    } finally {
+      setFocusing(false);
     }
   }
 
@@ -163,7 +232,15 @@ export default function ScanCardModal({ onClose, onSaved }: Props) {
       const blob = await cropToBlob(imgRef.current, selection);
       const worker = await createWorker('eng');
       try {
-        await worker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/' });
+        await worker.setParameters({
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/',
+          // Der Ausschnitt enthält bewusst nur eine Textzeile (Set-Code/Nummer) —
+          // die automatische Seitensegmentierung (Tesseract-Default) versucht sonst
+          // fälschlich, mehrere Blöcke/Absätze zu erkennen, was bei so einem
+          // kleinen Ausschnitt öfter zu Fehlerkennungen führt als eine feste
+          // "eine Zeile"-Annahme.
+          tessedit_pageseg_mode: PSM.SINGLE_LINE,
+        });
         const { data } = await worker.recognize(blob);
         await matchText(data.text);
       } finally {
@@ -272,6 +349,11 @@ export default function ScanCardModal({ onClose, onSaved }: Props) {
             <video ref={videoRef} autoPlay playsInline muted className="scan-preview" />
             <div className="actions" style={{ justifyContent: 'flex-start', marginTop: 0, marginBottom: 14 }}>
               <button type="button" className="btn primary" onClick={captureFromWebcam}>{t('scan_capture')}</button>
+              {focusSupported && (
+                <button type="button" className="btn" onClick={applyFocus} disabled={focusing}>
+                  {focusing ? t('scan_focusing') : t('scan_focus')}
+                </button>
+              )}
               <button type="button" className="btn" onClick={stopWebcam}>{t('modal_cancel')}</button>
             </div>
           </>

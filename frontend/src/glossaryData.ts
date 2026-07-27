@@ -10,10 +10,18 @@ export interface GlossaryTerm {
   en: string;
 }
 
+/** Eine Seltenheitsstufe: Name + wie man sie am physischen Karton erkennt (Folie/Symbol/Rahmen). */
+export interface GlossaryRarity {
+  name: string;
+  de: string;
+  en: string;
+}
+
 export interface GlossaryGame {
   code: string;
   label: string;
   terms: GlossaryTerm[];
+  rarities: GlossaryRarity[];
 }
 
 export const GLOSSARY: GlossaryGame[] = [
@@ -75,6 +83,53 @@ export const GLOSSARY: GlossaryGame[] = [
         term: 'Grind Game',
         de: 'Eine längere Partie ohne schnellen Abschluss, in der beide Seiten um Kartenvorteil/Ressourcen ringen, statt in einem Zug zu gewinnen.',
         en: 'A longer game without a quick finish, where both sides fight over card advantage/resources instead of winning in one turn.',
+      },
+    ],
+    rarities: [
+      {
+        name: 'Common',
+        de: 'Kein Folien-/Glanzeffekt — Kartenname in normaler schwarzer Schrift, mattes Artwork.',
+        en: 'No foil/holo treatment — card name in plain black text, matte artwork.',
+      },
+      {
+        name: 'Rare',
+        de: 'Kartenname in silberner Foliendruckschrift; Artwork und Textbox bleiben matt/unglänzend.',
+        en: 'Card name printed in silver foil; artwork and text box stay matte/non-holographic.',
+      },
+      {
+        name: 'Super Rare',
+        de: 'Das Artwork ist holografisch/glänzend, der Kartenname bleibt aber in normaler schwarzer Schrift (kein Folienname).',
+        en: 'The artwork itself is holographic/foil, but the card name stays in plain black text (no foil name).',
+      },
+      {
+        name: 'Ultra Rare',
+        de: 'Wie Super Rare (holografisches Artwork), zusätzlich aber der Kartenname in Gold-Folie.',
+        en: 'Like Super Rare (holographic artwork), but additionally the card name is printed in gold foil.',
+      },
+      {
+        name: 'Secret Rare',
+        de: 'Kartenname in silbern schillernder Regenbogen-Folie, oft kombiniert mit einem eigenen, abweichenden Holo-Muster im Artwork.',
+        en: 'Card name in shimmering silver rainbow foil, often combined with its own distinct holo pattern in the artwork.',
+      },
+      {
+        name: 'Ultimate Rare',
+        de: 'Artwork und Rahmen sind geprägt/erhaben (3D-Relief) — beim Darüberstreichen mit dem Finger spürbar, nicht nur optisch.',
+        en: 'Artwork and card frame are embossed/raised (3D relief) — noticeably textured to the touch, not just visually.',
+      },
+      {
+        name: 'Ghost Rare',
+        de: 'Mattsilbrige, „geisterhafte" Folienoptik über der ganzen Karte, mit eigener, abweichender Schriftart für den Kartennamen.',
+        en: 'A matte-silver, "ghostly" foil finish across the whole card, with its own distinct font for the card name.',
+      },
+      {
+        name: 'Starlight Rare',
+        de: 'Durchgehend schillernde Regenbogenfolie über die komplette Kartenoberfläche inkl. Rahmen und Textbox, nicht nur Name/Artwork.',
+        en: 'Shimmering rainbow foil across the entire card surface, including the frame and text box — not just the name/artwork.',
+      },
+      {
+        name: "Collector's Rare",
+        de: 'Goldstichige, strukturierte Musterung im Kartenhintergrund/Rahmen statt eines klassischen Regenbogenfolien-Looks.',
+        en: 'A gold-flecked, textured pattern in the card background/frame instead of a classic rainbow-foil look.',
       },
     ],
   },
@@ -143,6 +198,33 @@ export const GLOSSARY: GlossaryGame[] = [
         en: 'Too little (screw) or too much (flood) land relative to the spells in hand — both stall your own game plan.',
       },
     ],
+    rarities: [
+      {
+        name: 'Common',
+        de: 'Das kleine Symbol rechts neben dem Set-Namen in der Textbox ist schwarz oder weiß (Standardländer haben oft gar kein Symbol, zählen aber als Common).',
+        en: 'The small symbol next to the set name in the text box is black or white (basic lands often have no symbol at all, but still count as common).',
+      },
+      {
+        name: 'Uncommon',
+        de: 'Dasselbe Symbol ist silbern eingefärbt.',
+        en: 'The same symbol is colored silver.',
+      },
+      {
+        name: 'Rare',
+        de: 'Dasselbe Symbol ist golden eingefärbt.',
+        en: 'The same symbol is colored gold.',
+      },
+      {
+        name: 'Mythic Rare',
+        de: 'Dasselbe Symbol ist orange-bronzefarben eingefärbt — die seltenste reguläre Stufe.',
+        en: 'The same symbol is colored orange/bronze — the rarest regular tier.',
+      },
+      {
+        name: 'Special (lila Symbol)',
+        de: 'Ein violettes Symbol markiert historische Sonderfälle wie die „Timeshifted"-Karten aus Time Spiral — seltener eingestuft als reguläre Rares desselben Sets.',
+        en: 'A purple symbol marks historical special cases like the "Timeshifted" cards from Time Spiral — ranked rarer than regular rares of the same set.',
+      },
+    ],
   },
   {
     code: 'pokemon',
@@ -207,6 +289,43 @@ export const GLOSSARY: GlossaryGame[] = [
         term: 'Draw Support',
         de: 'Trainer-/Unterstützer-Karten, deren Haupteffekt darin besteht, zusätzliche Karten zu ziehen bzw. die Hand aufzufüllen.',
         en: "Trainer/Supporter cards whose main effect is drawing extra cards or refilling your hand.",
+      },
+    ],
+    rarities: [
+      {
+        name: 'Common',
+        de: 'Ein ausgefüllter schwarzer Kreis unten links neben der Kartennummer (bei ganz neuen Sets weiß statt schwarz).',
+        en: 'A filled black circle at the bottom left next to the card number (white instead of black on the very newest sets).',
+      },
+      {
+        name: 'Uncommon',
+        de: 'Eine ausgefüllte Raute (Diamant) an derselben Stelle.',
+        en: 'A filled diamond shape in the same spot.',
+      },
+      {
+        name: 'Rare',
+        de: 'Ein einzelner Stern an derselben Stelle.',
+        en: 'A single star in the same spot.',
+      },
+      {
+        name: 'Double Rare',
+        de: 'Zwei schwarze Sterne.',
+        en: 'Two black stars.',
+      },
+      {
+        name: 'Ultra Rare',
+        de: 'Zwei silberne Sterne — meist ein „Full Art"-Trainer/Pokémon ex ohne klassischen Kartenrahmen.',
+        en: 'Two silver stars — usually a "full art" Trainer/Pokémon ex without the classic card frame.',
+      },
+      {
+        name: 'Special Illustration Rare',
+        de: 'Zwei goldene Sterne, kombiniert mit einem alternativen, meist ganzseitigen Artwork abseits des Standard-Motivs.',
+        en: 'Two gold stars, combined with an alternate, usually full-bleed artwork different from the standard illustration.',
+      },
+      {
+        name: 'Hyper Rare / Rainbow Rare',
+        de: 'Ein goldenes „A"-ähnliches Symbol bzw. ein durchgehend regenbogenfarbener Kartenhintergrund über den kompletten Rahmen.',
+        en: 'A gold "A"-like symbol, or a full rainbow-colored card background covering the entire frame.',
       },
     ],
   },
@@ -278,6 +397,38 @@ export const GLOSSARY: GlossaryGame[] = [
         term: 'Reckless',
         de: 'Der Charakter darf nicht questen und muss angreifen, wenn er dazu in der Lage ist und ein gültiges Ziel existiert.',
         en: "The character can't quest, and must challenge if able and a legal target exists.",
+      },
+    ],
+    rarities: [
+      {
+        name: 'Common',
+        de: 'Graues, kreisförmiges Symbol unten im Kartenbild.',
+        en: 'Grey, circular symbol at the bottom of the card art.',
+      },
+      {
+        name: 'Uncommon',
+        de: 'Weißes, buchförmiges Symbol an derselben Stelle.',
+        en: 'White, book-shaped symbol in the same spot.',
+      },
+      {
+        name: 'Rare',
+        de: 'Bronzefarbenes, dreieckiges Symbol.',
+        en: 'Bronze, triangular symbol.',
+      },
+      {
+        name: 'Super Rare',
+        de: 'Silberfarbenes, rautenförmiges Symbol.',
+        en: 'Silver, diamond-shaped symbol.',
+      },
+      {
+        name: 'Legendary',
+        de: 'Goldfarbenes, fünfeckiges Symbol.',
+        en: 'Gold, pentagon-shaped symbol.',
+      },
+      {
+        name: 'Enchanted',
+        de: 'Kein normales Rahmen-Layout mehr: durchgehend schillernd-holografisches Vollbild-Artwork ohne sichtbaren Tintenkosten-Kreis, dazu ein sechseckiges Symbol — die seltenste Stufe (ca. 1 von 100 Boostern).',
+        en: 'No longer the normal frame layout: a fully shimmering, holographic full-art card with no visible ink-cost pip, plus a six-sided symbol — the rarest tier (roughly 1 in 100 packs).',
       },
     ],
   },
@@ -359,6 +510,38 @@ export const GLOSSARY: GlossaryGame[] = [
         term: '[Mighty]',
         de: 'Zustand einer Einheit mit 5 oder mehr Might, der eigene Zusatzeffekte auslösen kann.',
         en: 'The state of a unit having 5 or more Might, which can trigger its own additional effects.',
+      },
+    ],
+    rarities: [
+      {
+        name: 'Common',
+        de: 'Einfacher bronzefarbener Kartenrahmen mit rundem Raritäts-Symbol (Gem) unten mittig, kein Folienglanz.',
+        en: 'Simple bronze card frame with a round rarity gem at the bottom center, no foil finish.',
+      },
+      {
+        name: 'Uncommon',
+        de: 'Silberfarbener Kartenrahmen mit dreieckigem Raritäts-Symbol.',
+        en: 'Silver card frame with a triangular rarity gem.',
+      },
+      {
+        name: 'Rare',
+        de: 'Goldener Vollbild-Rahmen mit durchgehender Folienmusterung und quadratischem Raritäts-Symbol — Rare-Karten sind grundsätzlich immer foliert.',
+        en: 'Gold full-art frame with an all-over foil pattern and a square rarity gem — Rare cards are always foil by default.',
+      },
+      {
+        name: 'Epic',
+        de: 'Reduzierter, minimalistischer goldener Rahmen mit Folienveredelung und fünfeckigem Raritäts-Symbol — ebenfalls immer foliert.',
+        en: 'A minimalist gold frame with foil treatment and a pentagonal rarity gem — also always foil.',
+      },
+      {
+        name: 'Ultimate / Alternate Art',
+        de: 'Gelbes sechseckiges Symbol auf einem alternativen Artwork — die seltenste reguläre Stufe (unter 0,1 % der Booster).',
+        en: 'A yellow hexagonal symbol on an alternate artwork — the rarest regular tier (under 0.1% of boosters).',
+      },
+      {
+        name: 'Promo',
+        de: 'Sechseckiges Symbol wie Ultimate, zusätzlich mit einem eigenen Promo-Stempel gekennzeichnet — stammt nicht aus reguläreren Boostern.',
+        en: 'Hexagonal symbol like Ultimate, additionally marked with its own promo stamp — not sourced from regular boosters.',
       },
     ],
   },

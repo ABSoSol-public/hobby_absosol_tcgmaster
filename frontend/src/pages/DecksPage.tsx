@@ -1,11 +1,13 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { useGame } from '../game';
 import { useLanguage } from '../i18n';
 import { Deck } from '../types';
 
 export default function DecksPage() {
+  const { canEdit } = useAuth();
   const { t, tf, locale } = useLanguage();
   const { game } = useGame();
   const navigate = useNavigate();
@@ -75,28 +77,30 @@ export default function DecksPage() {
       <h1>{t('decks_title')}</h1>
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="toolbar">
-        <form onSubmit={create} style={{ display: 'flex', gap: 10, flex: '1 1 320px' }}>
+      {canEdit && (
+        <div className="toolbar">
+          <form onSubmit={create} style={{ display: 'flex', gap: 10, flex: '1 1 320px' }}>
+            <input
+              type="text"
+              placeholder={t('deck_new_placeholder')}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              style={{ flex: 1, padding: '9px 14px', background: 'var(--bg-panel)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8 }}
+            />
+            <button type="submit" className="btn primary" disabled={!name.trim()}>{t('deck_create')}</button>
+          </form>
+          <button className="btn" disabled={importing} onClick={() => fileInput.current?.click()}>
+            {importing ? t('deck_importing') : t('deck_import_ydk')}
+          </button>
           <input
-            type="text"
-            placeholder={t('deck_new_placeholder')}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ flex: 1, padding: '9px 14px', background: 'var(--bg-panel)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8 }}
+            ref={fileInput}
+            type="file"
+            accept=".ydk,text/plain"
+            style={{ display: 'none' }}
+            onChange={(e) => e.target.files?.[0] && importYdk(e.target.files[0])}
           />
-          <button type="submit" className="btn primary" disabled={!name.trim()}>{t('deck_create')}</button>
-        </form>
-        <button className="btn" disabled={importing} onClick={() => fileInput.current?.click()}>
-          {importing ? t('deck_importing') : t('deck_import_ydk')}
-        </button>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".ydk,text/plain"
-          style={{ display: 'none' }}
-          onChange={(e) => e.target.files?.[0] && importYdk(e.target.files[0])}
-        />
-      </div>
+        </div>
+      )}
       {importResult && <div className="panel" style={{ marginBottom: 16 }}>{importResult}</div>}
 
       {loading ? (
@@ -117,14 +121,16 @@ export default function DecksPage() {
                   · {new Date(d.updated_at).toLocaleDateString(locale)}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button
-                  className="btn small danger"
-                  onClick={(e) => { e.preventDefault(); remove(d); }}
-                >
-                  {t('coll_delete')}
-                </button>
-              </div>
+              {canEdit && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button
+                    className="btn small danger"
+                    onClick={(e) => { e.preventDefault(); remove(d); }}
+                  >
+                    {t('coll_delete')}
+                  </button>
+                </div>
+              )}
             </Link>
           ))}
         </div>

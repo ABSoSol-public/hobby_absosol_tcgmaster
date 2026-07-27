@@ -16,7 +16,7 @@ export default function AddToCollectionModal({ print, cardName, onClose, onSaved
   const [quantity, setQuantity] = useState(1);
   const [condition, setCondition] = useState<Condition>('NM');
   const [language, setLanguage] = useState('DE');
-  const [firstEdition, setFirstEdition] = useState(false);
+  const [firstEdition, setFirstEdition] = useState(true);
   const [storage, setStorage] = useState('');
   const [price, setPrice] = useState('');
   const [acquiredAt, setAcquiredAt] = useState('');

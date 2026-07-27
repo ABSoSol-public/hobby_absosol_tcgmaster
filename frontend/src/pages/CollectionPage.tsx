@@ -1,20 +1,25 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import CardImage from '../components/CardImage';
 import Paginator from '../components/Paginator';
 import ScanCardModal from '../components/ScanCardModal';
+import { useGame } from '../game';
 import { useLanguage } from '../i18n';
-import { CONDITION_LABELS, CardNavState, CollectionItem, Pagination } from '../types';
+import { CONDITION_LABELS, CardNavState, CollectionItem, LANGUAGES, Pagination } from '../types';
 
 function itemName(it: { card_name?: string; card_name_de?: string | null }, lang: string): string {
   return lang === 'de' ? it.card_name_de || it.card_name || '' : it.card_name || it.card_name_de || '';
 }
 
 export default function CollectionPage() {
+  const { canEdit } = useAuth();
   const { lang, t, locale } = useLanguage();
-  const euro = (v: string | number | null | undefined) =>
-    v != null ? Number(v).toLocaleString(locale, { style: 'currency', currency: 'EUR' }) : '—';
+  const { games } = useGame();
+  const gamesWithItems = games.filter((g) => g.collectedCount > 0);
+  const euro = (v: string | number | null | undefined, currency = 'EUR') =>
+    v != null ? Number(v).toLocaleString(locale, { style: 'currency', currency }) : '—';
   const [params, setParams] = useSearchParams();
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -47,7 +52,16 @@ export default function CollectionPage() {
   function load() {
     setLoading(true);
     api
-      .collection({ search: get('search'), page: get('page') || 1, limit: 50 })
+      .collection({
+        game: get('game') || undefined,
+        search: get('search'),
+        page: get('page') || 1,
+        limit: 50,
+        sort: get('sort') || undefined,
+        condition: get('condition') || undefined,
+        language: get('language') || undefined,
+        first_edition: get('first_edition') || undefined,
+      })
       .then((r) => { setItems(r.data); setPagination(r.pagination); setError(null); })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -99,17 +113,54 @@ export default function CollectionPage() {
           onChange={(e) => setSearchInput(e.target.value)}
         />
         <a className="btn" href={api.collectionExportUrl()} download>{t('csv_export')}</a>
-        <button className="btn" disabled={importingCsv} onClick={() => fileInput.current?.click()}>
-          {importingCsv ? t('csv_importing') : t('csv_import')}
-        </button>
-        <button className="btn" onClick={() => setScanning(true)}>{t('scan_button')}</button>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".csv,text/csv"
-          style={{ display: 'none' }}
-          onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])}
-        />
+        {canEdit && (
+          <>
+            <button className="btn" disabled={importingCsv} onClick={() => fileInput.current?.click()}>
+              {importingCsv ? t('csv_importing') : t('csv_import')}
+            </button>
+            <button className="btn" onClick={() => setScanning(true)}>{t('scan_button')}</button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: 'none' }}
+              onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])}
+            />
+          </>
+        )}
+      </div>
+
+      <div className="toolbar">
+        <select value={get('game')} onChange={(e) => setParam('game', e.target.value)}>
+          <option value="">{t('coll_filter_all_games')}</option>
+          {gamesWithItems.map((g) => <option key={g.code} value={g.code}>{g.name}</option>)}
+        </select>
+        <select value={get('sort') || 'newest'} onChange={(e) => setParam('sort', e.target.value === 'newest' ? '' : e.target.value)}>
+          <option value="newest">{t('coll_sort_newest')}</option>
+          <option value="oldest">{t('coll_sort_oldest')}</option>
+          <option value="name">{t('coll_sort_name')}</option>
+          <option value="quantity">{t('coll_sort_quantity')}</option>
+          <option value="value">{t('coll_sort_value')}</option>
+        </select>
+        <select value={get('condition')} onChange={(e) => setParam('condition', e.target.value)}>
+          <option value="">{t('coll_filter_all_conditions')}</option>
+          {Object.entries(CONDITION_LABELS).map(([code, label]) => (
+            <option key={code} value={code}>{code} — {label}</option>
+          ))}
+        </select>
+        <select value={get('language')} onChange={(e) => setParam('language', e.target.value)}>
+          <option value="">{t('coll_filter_all_languages')}</option>
+          {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+          <input
+            type="checkbox"
+            style={{ width: 'auto' }}
+            checked={get('first_edition') === '1'}
+            onChange={(e) => setParam('first_edition', e.target.checked ? '1' : '')}
+          />
+          {t('coll_filter_first_edition')}
+        </label>
       </div>
       {csvResult && <div className="panel" style={{ marginBottom: 16 }}>{csvResult}</div>}
 
@@ -144,10 +195,14 @@ export default function CollectionPage() {
                   <td>{it.is_first_edition ? <span className="badge-1st">1st</span> : ''}</td>
                   <td>{it.quantity}</td>
                   <td>{euro(it.purchase_price)}</td>
-                  <td>{euro(it.market_price ? Number(it.market_price) * it.quantity : null)}</td>
+                  <td>{euro(it.market_price ? Number(it.market_price) * it.quantity : null, it.currency)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button className="btn small" onClick={() => setEditing(it)}>{t('coll_edit')}</button>{' '}
-                    <button className="btn small danger" onClick={() => remove(it)}>{t('coll_delete')}</button>
+                    {canEdit && (
+                      <>
+                        <button className="btn small" onClick={() => setEditing(it)}>{t('coll_edit')}</button>{' '}
+                        <button className="btn small danger" onClick={() => remove(it)}>{t('coll_delete')}</button>
+                      </>
+                    )}
                   </td>
                 </tr>
                 );
@@ -174,7 +229,11 @@ function EditModal({ item, onClose, onSaved }: { item: CollectionItem; onClose: 
   const { lang, t } = useLanguage();
   const [quantity, setQuantity] = useState(item.quantity);
   const [condition, setCondition] = useState(item.condition);
+  const [language, setLanguage] = useState(item.language);
+  const [firstEdition, setFirstEdition] = useState(!!item.is_first_edition);
   const [storage, setStorage] = useState(item.storage_location || '');
+  const [price, setPrice] = useState(item.purchase_price || '');
+  const [acquiredAt, setAcquiredAt] = useState(item.acquired_at ? item.acquired_at.slice(0, 10) : '');
   const [notes, setNotes] = useState(item.notes || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +246,11 @@ function EditModal({ item, onClose, onSaved }: { item: CollectionItem; onClose: 
       await api.updateCollectionItem(item.id, {
         quantity,
         condition,
+        language,
+        is_first_edition: firstEdition,
         storage_location: storage || null,
+        purchase_price: price ? Number(String(price).replace(',', '.')) : null,
+        acquired_at: acquiredAt || null,
         notes: notes || null,
       });
       onSaved();
@@ -219,9 +282,34 @@ function EditModal({ item, onClose, onSaved }: { item: CollectionItem; onClose: 
                 ))}
               </select>
             </div>
-            <div className="full">
+            <div>
+              <label>{t('modal_language')}</label>
+              <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+                {LANGUAGES.map((l) => <option key={l}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>{t('modal_purchase_price')}</label>
+              <input type="text" inputMode="decimal" placeholder="z. B. 4,99" value={price} onChange={(e) => setPrice(e.target.value)} />
+            </div>
+            <div>
+              <label>{t('modal_acquired_at')}</label>
+              <input type="date" value={acquiredAt} onChange={(e) => setAcquiredAt(e.target.value)} />
+            </div>
+            <div>
               <label>{t('coll_storage')}</label>
               <input type="text" value={storage} onChange={(e) => setStorage(e.target.value)} />
+            </div>
+            <div className="full">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={firstEdition}
+                  onChange={(e) => setFirstEdition(e.target.checked)}
+                  style={{ width: 'auto', marginRight: 8 }}
+                />
+                {t('modal_first_edition')}
+              </label>
             </div>
             <div className="full">
               <label>{t('coll_notes')}</label>

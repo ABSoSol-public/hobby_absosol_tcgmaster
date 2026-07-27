@@ -1,5 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db';
+import { compareCollectorNumbers } from '../services/cardNumbers';
+import { getUsdToEurRate } from '../services/exchangeRate';
 import { withLocalImages } from '../services/images';
 
 const CONDITIONS = ['MT', 'NM', 'EX', 'GD', 'LP', 'PL', 'PO'];
@@ -33,57 +35,91 @@ const bodySchema = {
 } as const;
 
 export async function collectionRoutes(app: FastifyInstance) {
-  // Sammlung auflisten (optional je Spiel, mit Suche und Pagination)
-  app.get<{ Querystring: { game?: string; search?: string; page?: string; limit?: string } }>(
-    '/collection',
-    async (req) => {
-      const page = Math.max(1, Number(req.query.page || 1));
-      const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+  // Sammlung auflisten (optional je Spiel, mit Suche, Filtern, Sortierung und Pagination)
+  app.get<{
+    Querystring: {
+      game?: string;
+      search?: string;
+      page?: string;
+      limit?: string;
+      sort?: 'newest' | 'oldest' | 'name' | 'quantity' | 'value';
+      condition?: string;
+      language?: string;
+      first_edition?: string;
+    };
+  }>('/collection', async (req) => {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
 
-      const query = db('collection_items')
-        .join('card_prints', 'collection_items.print_id', 'card_prints.id')
-        .join('cards', 'card_prints.card_id', 'cards.id')
-        .join('card_sets', 'card_prints.set_id', 'card_sets.id')
-        .join('games', 'cards.game_id', 'games.id');
+    const query = db('collection_items')
+      .join('card_prints', 'collection_items.print_id', 'card_prints.id')
+      .join('cards', 'card_prints.card_id', 'cards.id')
+      .join('card_sets', 'card_prints.set_id', 'card_sets.id')
+      .join('games', 'cards.game_id', 'games.id');
 
-      if (req.query.game) query.where('games.code', req.query.game);
-      if (req.query.search) {
-        query.where((qb) => {
-          qb.where('cards.name', 'like', `%${req.query.search}%`).orWhere(
-            'cards.name_de',
-            'like',
-            `%${req.query.search}%`
-          );
-        });
-      }
-
-      const [{ total }] = (await query.clone().clearSelect().count({ total: '*' })) as { total: number }[];
-
-      const rows = await query
-        .select(
-          'collection_items.*',
-          'cards.id as card_id',
-          'cards.name as card_name',
-          'cards.name_de as card_name_de',
-          'cards.image_small_path',
-          'cards.image_path',
-          'card_prints.collector_number',
-          'card_prints.rarity',
-          'card_prints.market_price',
-          'card_sets.name as set_name',
-          'card_sets.code as set_code',
-          'games.code as game_code'
-        )
-        .orderBy('collection_items.updated_at', 'desc')
-        .limit(limit)
-        .offset((page - 1) * limit);
-
-      return {
-        data: rows.map(withLocalImages),
-        pagination: { page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) },
-      };
+    if (req.query.game) query.where('games.code', req.query.game);
+    if (req.query.search) {
+      query.where((qb) => {
+        qb.where('cards.name', 'like', `%${req.query.search}%`).orWhere(
+          'cards.name_de',
+          'like',
+          `%${req.query.search}%`
+        );
+      });
     }
-  );
+    if (req.query.condition) query.where('collection_items.condition', req.query.condition);
+    if (req.query.language) query.where('collection_items.language', req.query.language);
+    if (req.query.first_edition === '1') query.where('collection_items.is_first_edition', 1);
+
+    const [{ total }] = (await query.clone().clearSelect().count({ total: '*' })) as { total: number }[];
+
+    const query2 = query.select(
+      'collection_items.*',
+      'cards.id as card_id',
+      'cards.name as card_name',
+      'cards.name_de as card_name_de',
+      'cards.image_small_path',
+      'cards.image_path',
+      'card_prints.collector_number',
+      'card_prints.rarity',
+      'card_prints.market_price',
+      'card_prints.currency',
+      'card_sets.name as set_name',
+      'card_sets.code as set_code',
+      'games.code as game_code'
+    );
+    switch (req.query.sort) {
+      case 'oldest':
+        query2.orderBy('collection_items.updated_at', 'asc');
+        break;
+      case 'name':
+        query2.orderBy('cards.name', 'asc');
+        break;
+      case 'quantity':
+        query2.orderBy('collection_items.quantity', 'desc');
+        break;
+      case 'value': {
+        // Über card_prints.currency können USD (Yu-Gi-Oh!) und EUR (übrige
+        // Spiele) gemischt vorkommen — ohne Umrechnung würde die Sortierung
+        // 1 USD wie 1 EUR behandeln. Kurs vorab holen (gecacht, s.
+        // services/exchangeRate.ts) und als gebundenen Parameter einsetzen.
+        const usdToEur = await getUsdToEurRate();
+        query2.orderByRaw(
+          "collection_items.quantity * COALESCE(card_prints.market_price, 0) * IF(card_prints.currency = 'USD', ?, 1) DESC",
+          [usdToEur]
+        );
+        break;
+      }
+      default:
+        query2.orderBy('collection_items.updated_at', 'desc');
+    }
+    const rows = await query2.limit(limit).offset((page - 1) * limit);
+
+    return {
+      data: rows.map(withLocalImages),
+      pagination: { page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) },
+    };
+  });
 
   // Sammlungsstatistik (Dashboard)
   app.get<{ Querystring: { game?: string } }>('/collection/stats', async (req) => {
@@ -96,12 +132,22 @@ export async function collectionRoutes(app: FastifyInstance) {
       return q;
     };
 
+    // marketValue summiert card_prints.market_price über alle Prints hinweg —
+    // seit Yu-Gi-Oh! (USD) neben den übrigen 4 Spielen (EUR) steht, muss der
+    // USD-Anteil vorher in EUR umgerechnet werden, sonst wird schlicht addiert,
+    // als wären 1 USD und 1 EUR derselbe Wert (s. services/exchangeRate.ts).
+    const usdToEur = await getUsdToEurRate();
     const [totals] = await base()
       .sum({ totalCopies: 'collection_items.quantity' })
       .countDistinct({ distinctCards: 'cards.id' })
       .countDistinct({ distinctPrints: 'card_prints.id' })
       .sum({ purchaseValue: db.raw('collection_items.quantity * COALESCE(collection_items.purchase_price, 0)') as never })
-      .sum({ marketValue: db.raw('collection_items.quantity * COALESCE(card_prints.market_price, 0)') as never });
+      .sum({
+        marketValue: db.raw(
+          "collection_items.quantity * COALESCE(card_prints.market_price, 0) * IF(card_prints.currency = 'USD', ?, 1)",
+          [usdToEur]
+        ) as never,
+      });
 
     return {
       data: {
@@ -188,6 +234,25 @@ export async function collectionRoutes(app: FastifyInstance) {
     return reply.code(204).send();
   });
 
+  // Schnell-Entfernen (Set-Ansicht "−1"): zieht ein Exemplar von einem
+  // Sammlungseintrag dieses Prints ab. Bevorzugt den Standard-Schnell-Hinzufügen-
+  // Eintrag (NM/DE/1. Auflage), sonst den zuletzt geänderten Eintrag.
+  app.delete<{ Params: { printId: string } }>('/collection/by-print/:printId/one', async (req, reply) => {
+    const printId = Number(req.params.printId);
+    const preferred = await db('collection_items')
+      .where({ print_id: printId, condition: 'NM', language: 'DE', is_first_edition: 1 })
+      .first();
+    const item = preferred || (await db('collection_items').where('print_id', printId).orderBy('updated_at', 'desc').first());
+    if (!item) return reply.code(404).send({ error: { message: 'Kein Sammlungseintrag für diesen Print', statusCode: 404 } });
+
+    if (item.quantity > 1) {
+      await db('collection_items').where('id', item.id).update({ quantity: item.quantity - 1, updated_at: db.fn.now() });
+    } else {
+      await db('collection_items').where('id', item.id).del();
+    }
+    return reply.code(204).send();
+  });
+
   // --- CSV-Export der Sammlung ---------------------------------------------
   app.get<{ Querystring: { game?: string } }>('/collection/export', async (req, reply) => {
     const query = db('collection_items')
@@ -195,10 +260,10 @@ export async function collectionRoutes(app: FastifyInstance) {
       .join('cards', 'card_prints.card_id', 'cards.id')
       .join('card_sets', 'card_prints.set_id', 'card_sets.id')
       .join('games', 'cards.game_id', 'games.id')
-      .orderBy(['games.code', 'card_sets.code', 'card_prints.collector_number']);
+      .orderBy(['games.code', 'card_sets.code']);
     if (req.query.game) query.where('games.code', req.query.game);
 
-    const rows = await query.select(
+    const rows: { game: string; set_code: string; collector_number: string | null }[] = await query.select(
       'games.code as game',
       'card_sets.code as set_code',
       'card_prints.collector_number',
@@ -213,6 +278,16 @@ export async function collectionRoutes(app: FastifyInstance) {
       'collection_items.purchase_price',
       'collection_items.acquired_at',
       'collection_items.notes'
+    );
+    // Kompletter Sortierschlüssel in JS (Spiel, Set, dann Sammelnummer natürlich
+    // statt alphabetisch — sonst "10" vor "2"): ein reiner Sort nur nach
+    // Sammelnummer würde die Spiel-/Set-Gruppierung zerstören, da Stabilität
+    // nur bei gleichen Schlüsseln greift, nicht über unterschiedliche hinweg.
+    rows.sort(
+      (a, b) =>
+        a.game.localeCompare(b.game) ||
+        a.set_code.localeCompare(b.set_code) ||
+        compareCollectorNumbers(a.collector_number, b.collector_number)
     );
 
     const esc = (v: unknown): string => {

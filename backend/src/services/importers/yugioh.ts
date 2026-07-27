@@ -229,10 +229,15 @@ export const yugiohImporter: GameImporter = {
         if (seen.has(dedupeKey)) continue; // Duplikate innerhalb der Quelle überspringen
         seen.add(dedupeKey);
 
+        // set_price ist der TCGPlayer-Preis in USD (keine Cardmarket-EUR-Quelle
+        // liefert Preise je Print/Rarität, siehe PROGRESS.md 2026-07-21 — daher
+        // bewusst USD statt eines fälschlich als EUR beschrifteten oder auf
+        // "ein Preis für alle Raritäten" verflachten Werts). currency wird
+        // deshalb explizit mitgeführt statt implizit EUR anzunehmen.
         const price = p.set_price ? Number(p.set_price) : null;
         const marketPrice = price && price > 0 ? price : null;
         const rarityCode = p.set_rarity_code ? p.set_rarity_code.replace(/[()]/g, '') : null;
-        const contentHash = hashOf({ rarity_code: rarityCode, market_price: marketPrice });
+        const contentHash = hashOf({ rarity_code: rarityCode, market_price: marketPrice, currency: 'USD' });
         const hashKey = `${cardId}|${setId}|${p.set_code}|${rarity}`;
 
         printRowsAll.push({
@@ -244,6 +249,7 @@ export const yugiohImporter: GameImporter = {
             rarity,
             rarity_code: rarityCode,
             market_price: marketPrice,
+            currency: 'USD',
             content_hash: contentHash,
           },
         });
@@ -259,7 +265,7 @@ export const yugiohImporter: GameImporter = {
       await db('card_prints')
         .insert(chunk)
         .onConflict(['card_id', 'set_id', 'collector_number', 'rarity'])
-        .merge(['rarity_code', 'market_price', 'content_hash']);
+        .merge(['rarity_code', 'market_price', 'currency', 'content_hash']);
       done += chunk.length;
       if (done % 20000 < CHUNK) onProgress(`Prints aktualisiert: ${done}/${changedPrintRows.length}`);
     }

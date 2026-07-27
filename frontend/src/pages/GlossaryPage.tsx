@@ -36,12 +36,24 @@ export default function GlossaryPage() {
         ))}
       </div>
 
+      <h2 style={{ marginTop: '1.5rem' }}>{t('glossary_rarities_heading')}</h2>
+      <p className="muted">{t('glossary_rarities_intro')}</p>
+
+      {current.rarities.map((entry) => (
+        <div key={entry.name} className="panel" style={{ padding: '0.75rem 1rem', marginBottom: '0.75rem' }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{entry.name}</div>
+          <div className="muted">{lang === 'de' ? entry.de : entry.en}</div>
+        </div>
+      ))}
+
+      <h2 style={{ marginTop: '1.5rem' }}>{t('glossary_terms_heading')}</h2>
+
       <input
         type="search"
         placeholder={t('glossary_search_placeholder')}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ marginBottom: '1rem', maxWidth: 320 }}
+        style={{ margin: '1rem 0', maxWidth: 320 }}
       />
 
       {terms.length === 0 && <div className="empty">{t('glossary_empty')}</div>}

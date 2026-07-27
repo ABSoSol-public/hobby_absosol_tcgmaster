@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { useLanguage } from '../i18n';
 import { PriceHistoryEntry } from '../types';
 
@@ -26,6 +27,7 @@ function niceCeil(value: number): number {
  * unabhängig je Zeile in der Print-Tabelle ein-/ausgeklappt werden.
  */
 export default function PriceHistoryChart({ printId }: Props) {
+  const { canEdit } = useAuth();
   const { t, locale } = useLanguage();
   const [entries, setEntries] = useState<PriceHistoryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +140,7 @@ export default function PriceHistoryChart({ printId }: Props) {
     [points]
   );
 
-  const addForm = (
+  const addForm = canEdit && (
     <form className="price-history-add" onSubmit={submitManualPrice}>
       <span className="price-history-add-heading">{t('price_history_add_heading')}</span>
       <input
@@ -170,9 +172,11 @@ export default function PriceHistoryChart({ printId }: Props) {
             <span>
               {formatPrice(Number(e.price), e.currency)} · {formatDate(e.recorded_at)}
             </span>
-            <button type="button" className="btn small danger" onClick={() => deleteManualPrice(e.id)}>
-              {t('price_history_manual_delete')}
-            </button>
+            {canEdit && (
+              <button type="button" className="btn small danger" onClick={() => deleteManualPrice(e.id)}>
+                {t('price_history_manual_delete')}
+              </button>
+            )}
           </li>
         ))}
       </ul>

@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db';
+import { compareCollectorNumbers } from '../services/cardNumbers';
 import { withLocalImages } from '../services/images';
 
 export async function setRoutes(app: FastifyInstance) {
@@ -66,8 +67,12 @@ export async function setRoutes(app: FastifyInstance) {
         'cards.card_type',
         'cards.image_small_path',
         'cards.image_path'
-      )
-      .orderBy('card_prints.collector_number');
+      );
+    // Natürliche statt reiner String-Sortierung — sonst käme "10" alphabetisch
+    // vor "2" (SQL ORDER BY auf einer Textspalte vergleicht ziffernweise).
+    prints.sort((a: { collector_number: string | null }, b: { collector_number: string | null }) =>
+      compareCollectorNumbers(a.collector_number, b.collector_number)
+    );
 
     const owned = await db('collection_items')
       .whereIn('print_id', prints.map((p: { id: number }) => p.id))

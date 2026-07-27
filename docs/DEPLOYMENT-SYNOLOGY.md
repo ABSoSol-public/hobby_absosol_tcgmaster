@@ -64,6 +64,7 @@ FRONTEND_PORT=8080
 
 - **`DB_HOST`**: Da MariaDB als eigenständiges Synology-Paket läuft (nicht im selben Docker-Compose-Netz), muss der Backend-Container über die normale Netzwerkadresse der NAS zugreifen. `localhost`/`127.0.0.1` zeigt im Container auf sich selbst, nicht auf den Host — deshalb die LAN-IP der NAS eintragen, nicht `localhost` und nicht zwingend die DDNS-Adresse (NAT-Loopback auf sich selbst funktioniert nicht überall zuverlässig).
 - **`IMAGES_DIR`**: Muss explizit gesetzt werden, sonst mountet Docker das leere Default-Verzeichnis `./data_images`. Auf den Zielpfad aus Abschnitt „Kartenbilder übertragen" unten setzen.
+- **`BACKEND_UID`/`BACKEND_GID`**: Der Backend-Container läuft standardmäßig als unprivilegierter User (UID/GID 1000, kein root). Liegt `IMAGES_DIR` auf einer eigenen Synology-Freigabe mit eigener ACL, hier UID/GID eintragen — sonst liefert `/images/...` durchgehend `500 EACCES` statt der Bilder. **Wichtig**: Synology-ACLs (`synoacltool -get <pfad>` bzw. „+" hinter den Rechten in `ls -la`) überschreiben die sichtbaren Unix-Rechte komplett und gewähren oft **nicht** dem angezeigten Datei-Besitzer Zugriff, sondern nur explizit gelisteten Nutzern/Gruppen (z. B. `administrators` oder einem eigens angelegten Freigabe-User) — die UID des Besitzers laut `ls -la` reicht daher nicht zwingend aus. Per `synoacltool -get <pfad>` prüfen, welcher Nutzer/welche Gruppe tatsächlich `allow`-Einträge hat, und dessen UID/GID (`id <benutzer>`) eintragen.
 - **`JWT_SECRET`**: Pflichtfeld — das Backend bricht den Start ohne diesen Wert sofort ab (Log-Meldung dazu). Signiert die Login-Session; bei Verlust/Änderung werden alle bestehenden Sessions ungültig (einfach neu einloggen).
 
 ## 4. Kartenbilder übertragen
@@ -77,6 +78,8 @@ Für einmalige/kleinere Transfers per SSH: `tar` wie in Abschnitt 2 (kein Delta,
 ## 5. Container bauen und starten
 
 **Synology-Besonderheit** (getestet auf DSM 7.1.1, Docker-Paket 20.10.3): Das mitgelieferte `docker`/`docker-compose` ist ein **setuid-root-Binary ohne Gruppenzugriff** für normale Nutzer — Befehle brauchen `sudo`. Außerdem gibt es hier nur das ältere, eigenständige `docker-compose` (Bindestrich), **nicht** das neuere `docker compose`-Subcommand (kein CLI-Plugin installiert). Zusätzlich: **kein SSH-basiertes `rsync`** möglich (der `--server`-Modus wird von DSM aus Sicherheitsgründen blockiert, `Permission denied, please try again.` unabhängig vom Client) — Code-Transfer per `tar` über SSH oder Git.
+
+**Update DSM 7.2+**: Das Paket „Docker" wird bei einem DSM-Upgrade automatisch in **„Container Manager"** umbenannt/migriert (`/var/packages/ContainerManager/...` statt `/var/packages/Docker/...`). Die Pfade `/usr/local/bin/docker` und `/usr/local/bin/docker-compose` bleiben als Symlinks erhalten und zeigen automatisch auf den neuen Ort — alle Befehle in dieser Doku funktionieren unverändert weiter, kein Anpassungsbedarf nach einem DSM-Update. Nach einem größeren DSM-Sprung (z. B. 7.1 → 7.4, wie hier einmal erlebt) trotzdem kurz `curl <host>/api/health` und den Login testen — Zertifikat, Reverse-Proxy-Regel und Aufgabenplaner-Jobs überstehen Updates zwar erfahrungsgemäß problemlos, aber sicher ist sicher.
 
 Im Container Manager per Projekt (docker-compose.yml auswählen) **oder** per SSH:
 
@@ -107,6 +110,14 @@ chmod +x create-user.sh   # einmalig
 ```
 
 Erneuter Aufruf mit demselben `<username>` setzt dessen Passwort neu (nützlich bei Passwort-Verlust). Weitere Nutzer entsprechend mit anderem Usernamen anlegen.
+
+**Rollen** (seit 2026-07-27): Jeder Nutzer hat eine Rolle, `admin` (voller Zugriff, Standard) oder `viewer` (nur Lesezugriff — sieht alles, kann aber nichts an Sammlung/Decks/Katalog ändern; jeder schreibende Request bekommt vom Backend `403`). Optionaler dritter Parameter:
+
+```bash
+./create-user.sh <username> <passwort> viewer
+```
+
+Weggelassen → `admin` bei Neuanlage; bei einem bereits bestehenden Nutzer bleibt die Rolle unverändert, wenn hier nichts angegeben wird (nur das Passwort wird dann zurückgesetzt).
 
 ## 8. Kataloge importieren
 
@@ -154,16 +165,37 @@ Für Zugriff von außen ohne Browser-Warnung. Läuft komplett über DSM-Bordmitt
 1. **Zertifikat**: Systemsteuerung → Sicherheit → Zertifikat → Hinzufügen → „Ein Zertifikat von Let's Encrypt holen" → Domain (die eigene `*.myds.me`-DDNS-Adresse oder eigene Domain), E-Mail. Voraussetzung: Port 80 extern auf die NAS weitergeleitet (für den HTTP-01-Check).
 2. **Reverse Proxy**: Systemsteuerung → Anmeldeportal → Erweitert → Reverse Proxy → Erstellen.
    - Quelle: Protokoll HTTPS, Hostname = die eigene DDNS-Adresse, **Port 8443** (nicht 443!)
-   - Ziel: Protokoll HTTP, Hostname = **LAN-IP der NAS** (nicht `localhost` — siehe Warnung unten), Port = `FRONTEND_PORT` aus der `.env` (Default 8080)
+   - Ziel: Protokoll HTTP, Hostname = **feste Container-IP `172.28.0.10`** (das eigene `tcgnet`-Docker-Netzwerk aus `docker-compose.yml` — nicht `localhost` und nicht die LAN-IP/den veröffentlichten Port, siehe Warnung unten), Port **80** (der Container-interne nginx-Port, nicht `FRONTEND_PORT`/8080)
 3. **Zertifikat zuweisen**: Systemsteuerung → Sicherheit → Zertifikat → Einstellungen → den neuen Reverse-Proxy-Dienst auf das Let's-Encrypt-Zertifikat umstellen.
 4. **Router**: Portweiterleitung extern **443** → intern **8443** (Ziel-IP = LAN-IP der NAS), TCP. Nach außen bleibt die Adresse ohne Portangabe (`https://<domain>/`).
-5. **`.env`**: `COOKIE_SECURE=true` setzen (Login-Cookie nur noch über HTTPS gesendet), danach Backend neu starten: `sudo /usr/local/bin/docker-compose --env-file .env up -d backend`.
+5. **`.env`**: `COOKIE_SECURE=true` **und** `FORCE_HTTPS=true` setzen — Ersteres sorgt dafür, dass der Login-Cookie nur noch über HTTPS gesendet wird, Zweiteres schließt den sonst weiterhin offenen, unverschlüsselten Direktzugriff auf `FRONTEND_PORT` (ohne das bliebe Login/Session per `http://<lan-ip>:<FRONTEND_PORT>` im Klartext möglich, auch wenn HTTPS über den Reverse Proxy längst eingerichtet ist!). Danach neu bauen (das Frontend-Image ändert sich): `sudo /usr/local/bin/docker-compose --env-file .env up -d --build`.
 
-**Zwei Fallstricke, die in der Praxis schon einmal aufgetreten sind:**
+**Vier Fallstricke, die in der Praxis schon einmal aufgetreten sind:**
 - **Nicht Port 443 als Reverse-Proxy-Quelle verwenden, wenn die Quelle die eigene DDNS-Adresse (`*.myds.me`) ist.** DSMs eigenes QuickConnect-/Anmeldeportal registriert diese Kombination in der Haupt-`nginx.conf` zuerst — eine eigene Reverse-Proxy-Regel für denselben Hostnamen+Port wird dann stillschweigend ignoriert (kein Fehler, es antwortet einfach weiter die DSM-Login-Seite). Deshalb Port 8443 intern + Portumsetzung im Router.
-- **Nicht `localhost` als Reverse-Proxy-Ziel verwenden** — DSMs nginx-Prozess erreicht darüber den Docker-Container nicht zuverlässig (gleiches Muster wie bei `DB_HOST`, siehe Abschnitt 3). Immer die LAN-IP der NAS eintragen.
+- **Nicht `localhost` als Reverse-Proxy-Ziel verwenden** — DSMs nginx-Prozess erreicht darüber den Docker-Container nicht zuverlässig (gleiches Muster wie bei `DB_HOST`, siehe Abschnitt 3).
+- **Nicht die LAN-IP + veröffentlichten Port (`192.168.x.x:8080`) als Reverse-Proxy-Ziel verwenden** — auf manchen Systemen (beobachtet nach einem großen DSM-Update, 7.1 → 7.4) ist genau dieser Weg über Dockers Port-Publishing (`-p 8080:80`, iptables-NAT) intermittierend fehlerhaft: einzelne Bild-Requests bleiben nach ca. 60 Sekunden mit `HTTP/2 ... INTERNAL_ERROR` hängen, während reiner Docker-interner Container-Traffic zuverlässig läuft. Deshalb zeigt die Reverse-Proxy-Regel auf die **feste Container-IP** (`172.28.0.10`, Port 80) aus dem `tcgnet`-Netzwerk in `docker-compose.yml` — das umgeht den Port-Publishing-Pfad komplett.
+- **`FORCE_HTTPS` nicht vergessen** — ohne diese Variable bleibt `FRONTEND_PORT` weiterhin unverschlüsselt direkt erreichbar, parallel zum HTTPS-Zugang über den Reverse Proxy. Der Login (inkl. Passwort) ginge dann bei direktem Zugriff auf `http://<lan-ip>:<FRONTEND_PORT>` im Klartext übers Netz, obwohl HTTPS "eigentlich" eingerichtet ist.
+
+## 11. Mehrere Apps auf derselben NAS (Subdomain-Muster)
+
+Wer auf derselben NAS neben diesem Projekt noch weitere Web-Apps hosten will: DSMs eingebauter Reverse Proxy unterscheidet nur nach **Hostname**, nicht nach URL-Pfad — eine Regel wie „`<domain>/tcg` → Container A" ist nicht vorgesehen (community-weit bestätigt, kein natives Feature, auch nicht in aktuellen DSM-Versionen). Der von DSM tatsächlich unterstützte Weg ist eine **eigene Subdomain je App**:
+
+1. Synologys DDNS (`*.myds.me` bzw. `*.synology.me`) unterstützt Wildcard-Subdomains — `app.<eigene-domain>.myds.me` löst schon jetzt automatisch auf dieselbe NAS auf, ganz ohne zusätzliche DDNS-Registrierung nötig.
+2. Pro App ein **eigenes** Let's-Encrypt-Zertifikat holen (Schritt 1 oben, aber mit `app.<eigene-domain>.myds.me` als Domainname statt der nackten DDNS-Adresse).
+3. Pro App eine **eigene** Reverse-Proxy-Regel (Schritt 2 oben): Quelle `app.<eigene-domain>.myds.me:8443`, Ziel die feste Container-IP der jeweiligen App im passenden Docker-Netz, Port 80.
+4. Zertifikat-Zuweisung (Schritt 3 oben) pro Regel auf das jeweils passende Subdomain-Zertifikat setzen.
+5. Router/Portweiterleitung bleibt unverändert — weiterhin ein einziger externer Port 443→8443 für **alle** Subdomains gemeinsam, kein neuer Port je App nötig.
+
+Kein Code-Änderungsbedarf im jeweiligen Projekt, solange dort nirgends die Domain hartkodiert ist — bei diesem Projekt geprüft: nirgends der Fall (auch `CORS_ORIGINS` greift hier nicht, da Frontend und Backend über denselben Origin laufen und der Reverse Proxy daraus same-origin-Requests macht).
 
 ## Updates einspielen
+
+**Stolperstein**: `docker-compose ... up -d --build` pullt das Basis-Image (`node:22-alpine`) standardmäßig **nicht** neu, wenn schon eines mit passendem Tag lokal liegt — auch wenn das lokale Image schon Wochen alt ist. Das kann zu kryptischen `npm ERR! EBADENGINE`-Abbrüchen mitten im Build führen, wenn eine (transitive) Abhängigkeit inzwischen eine neuere Node-Version voraussetzt, als im alten gecachten Basis-Image steckt. Prüfen mit `sudo docker inspect node:22-alpine --format '{{.Created}}'`; falls alt, einmalig neu ziehen:
+```bash
+sudo docker rmi node:22-alpine
+sudo docker pull node:22-alpine
+sudo /usr/local/bin/docker-compose --env-file .env build --no-cache
+```
 
 Solange per `tar` deployt wird (Abschnitt 2): den `tar`-Befehl aus Abschnitt 2 erneut ausführen, dann auf der NAS neu bauen (siehe Synology-Besonderheit in Abschnitt 5 zu `sudo`/`docker-compose`):
 
@@ -211,3 +243,5 @@ Für automatisierte Backups eignet sich derselbe Weg wie beim Delta-Import-Cron 
 | DB-Port der Synology-MariaDB | nur intern erreichbar halten, nicht ins Internet weiterleiten |
 
 Nur Port `FRONTEND_PORT` muss (falls gewünscht) im Router/Reverse Proxy freigegeben werden — die Backend-API ist ausschließlich über den nginx-Proxy des Frontends erreichbar.
+
+**Ausgehende Verbindungen**: Der Backend-Container braucht uneingeschränkten ausgehenden HTTPS-Zugriff (Port 443) zu den Katalog-Quellen (YGOPRODeck, Scryfall, pokemontcg.io, lorcanajson.org, riftcodex.com) sowie seit 2026-07-21 zusätzlich zu `api.dotgg.gg` (Cardmarket-Preise/-Links für Lorcana/Riftbound) und `api.frankfurter.app` (Wechselkurs für Sammlungswert-Summen) — auf einer Standard-Synology ohne restriktive ausgehende Firewall-Regeln ist das ohne Weiteres gegeben, sonst diese Hosts freigeben.

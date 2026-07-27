@@ -41,6 +41,45 @@ export async function recordPriceHistory(
   return valid.length;
 }
 
+export interface DotggPriceInfo {
+  /** Cardmarket-Preis (EUR), null wenn 0/unbekannt */
+  price: number | null;
+  /** Direktlink zur Cardmarket-Produktseite */
+  url: string | null;
+}
+
+/**
+ * Cardmarket-Preise/-Links über die freie, öffentlich dokumentierte dotgg.gg-
+ * API (https://dotgg.gg/api/, kein Key nötig) — deckt u. a. Lorcana und
+ * Riftbound ab, für die es sonst keine Cardmarket-Anbindung gibt. Liefert je
+ * Karten-ID (`{Set-Code}-{Sammelnummer}`, spielabhängig formatiert — die
+ * Zuordnung zu unseren eigenen Prints übernimmt der jeweilige Importer) den
+ * `cmPrice`/`cmurl`.
+ *
+ * Bewusst best-effort: die API selbst ist "as-is" ohne Uptime-Garantie
+ * dokumentiert. Schlägt der Abruf fehl, liefert diese Funktion eine leere
+ * Map statt zu werfen — der Katalog-Import läuft dann normal weiter, nur
+ * ohne Cardmarket-Daten für diesen Lauf (holt sie sich beim nächsten
+ * Delta-Import automatisch nach).
+ */
+export async function fetchDotggCardmarketPrices(gameSlug: string): Promise<Map<string, DotggPriceInfo>> {
+  const map = new Map<string, DotggPriceInfo>();
+  try {
+    const cards = await fetchJson<{ id?: string; cmPrice?: string; cmurl?: string }[]>(
+      `https://api.dotgg.gg/cgfw/getcards?game=${gameSlug}`
+    );
+    for (const c of cards) {
+      if (!c.id) continue;
+      const price = c.cmPrice ? Number(c.cmPrice) : null;
+      map.set(c.id, { price: price && price > 0 ? price : null, url: c.cmurl || null });
+    }
+  } catch {
+    // dotgg ist nur eine Zusatzquelle für Cardmarket-Daten, kein Kernbestandteil
+    // des Imports — bei Fehlern (Downtime, Formatänderung) einfach ohne weitermachen.
+  }
+  return map;
+}
+
 /**
  * Upsert-Helfer für Sets: legt Sets an bzw. aktualisiert sie und liefert
  * die Zuordnung Set-Code → id zurück.

@@ -186,7 +186,8 @@ export const pokemonImporter: GameImporter = {
           rarity,
           rarity_code: null,
           market_price: marketPrice,
-          content_hash: hashOf({ rarity_code: null, market_price: marketPrice }),
+          currency: 'EUR',
+          content_hash: hashOf({ rarity_code: null, market_price: marketPrice, currency: 'EUR' }),
         },
       });
     }
@@ -197,7 +198,7 @@ export const pokemonImporter: GameImporter = {
       await db('card_prints')
         .insert(chunk)
         .onConflict(['card_id', 'set_id', 'collector_number', 'rarity'])
-        .merge(['rarity_code', 'market_price', 'content_hash']);
+        .merge(['rarity_code', 'market_price', 'currency', 'content_hash']);
     }
 
     // 4) Preis-Historie für neue/geänderte Preise

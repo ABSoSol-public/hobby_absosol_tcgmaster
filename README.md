@@ -1,5 +1,7 @@
 # TCG Collection Manager
 
+**Version 1.11** — geplante nächste Schritte in [docs/ROADMAP.md](docs/ROADMAP.md).
+
 Selbstgehostete Sammelkartenverwaltung im Stil von **cardcluster** — für **Yu-Gi-Oh!, Pokémon TCG, Magic: The Gathering, Riftbound und Disney Lorcana**.
 
 Gedacht zum Selbsthosten (z. B. auf einer Synology NAS): **MariaDB** als Datenbank, **Docker** für Backend (REST-API) und Frontend (Web-App), Login-Pflicht, HTTPS-fähig.
@@ -10,12 +12,12 @@ Gedacht zum Selbsthosten (z. B. auf einer Synology NAS): **MariaDB** als Datenba
 - **Delta-Import**: täglicher Katalog-Abgleich per Versions-Check + Inhalts-Hash, statt jedes Mal alles neu zu schreiben (cron-fähig)
 - **Karten-Browser**: Suche über Name, Kartentext und Sammelnummer (inkl. Sprachkürzel-Wildcard), generische Filter je Spiel, Set-Übersicht mit Fortschrittsanzeige
 - **Sammlungsverwaltung**: Menge, Zustand, Sprache, 1. Auflage, Lagerort, Kaufpreis, CSV-Import/-Export
-- **Preis-Historie**: automatische Preis-Snapshots aus dem Import plus eigene manuelle Einträge, Verlaufsdiagramm im Frontend
+- **Preis-Historie**: automatische Preis-Snapshots aus dem Import plus eigene manuelle Einträge, Verlaufsdiagramm im Frontend — echte Cardmarket-EUR-Preise für Magic/Pokémon/Lorcana/Riftbound (bei Lorcana/Riftbound über die freie `dotgg.gg`-API, teils inkl. Direktlink zur Cardmarket-Produktseite); Yu-Gi-Oh! bewusst TCGPlayer-USD statt Cardmarket, da nur so Preise je Rarität statt nur je Karte verfügbar sind (Details in [docs/DATENBANK.md](docs/DATENBANK.md)). Sammlungswert-Summen rechnen USD automatisch in EUR um.
 - **Deck-Builder**: Zonen (Main/Extra/Side), Regeln je Spiel, Besitz-Abdeckung, Banlist-Check (Yu-Gi-Oh!), YDK-Import/-Export, PDF-Export
 - **Foto-Scan**: Karte fotografieren (Handy-Kamera oder Webcam), Set-Code/Nummer per OCR erkennen und direkt zur Sammlung hinzufügen
 - **Lokale Bild-Spiegelung**: Kartenbilder werden gespiegelt und selbst ausgeliefert statt extern verlinkt (kein Hotlinking)
-- **Glossar**: Community-Jargon/Schlüsselwörter je Spiel als Nachschlageseite
-- **Authentifizierung**: Login-Pflicht (JWT im httpOnly-Cookie), keine öffentliche Registrierung
+- **Glossar**: Community-Jargon/Schlüsselwörter je Spiel als Nachschlageseite, inkl. Erklärung je Seltenheitsstufe, woran man sie am physischen Karton erkennt (Folie/Symbol/Rahmen)
+- **Authentifizierung**: Login-Pflicht (JWT im httpOnly-Cookie), keine öffentliche Registrierung, Rollen `admin`/`viewer` (Viewer sieht alles, kann aber nichts ändern), Rate-Limiting gegen Brute-Force, Security-Header (Helmet), optionaler HTTPS-Zwang hinter einem Reverse Proxy
 - **Mehrsprachig** (DE/EN) und **mobilfreundlich** (installierbar als Home-Bildschirm-App)
 - Saubere REST-API — Frontend und Backend sind vollständig entkoppelt
 
@@ -63,7 +65,8 @@ npm run import:game -- yugioh       # Erstimport (bzw. Delta, falls schon import
 Ersten Login-Nutzer anlegen (keine öffentliche Registrierung):
 
 ```bash
-./create-user.sh <username> <passwort>
+./create-user.sh <username> <passwort>              # Rolle "admin" (voller Zugriff)
+./create-user.sh <username> <passwort> viewer        # Rolle "viewer" (nur Lesezugriff)
 ```
 
 ## Deployment (z. B. Synology NAS)
@@ -96,8 +99,8 @@ Für automatische, regelmäßige Aktualisierung: `cron-delta-import.sh` als Cron
 Die App verlangt einen Login (keine öffentliche Registrierung). Beide Aufgaben laufen über schlanke Wrapper-Skripte im Projekt-Root, die direkt gegen die in `.env` konfigurierte Datenbank arbeiten:
 
 ```bash
-./create-user.sh <username> <passwort>   # Nutzer anlegen bzw. Passwort zurücksetzen
-./backup-db.sh                           # DB sichern nach backups/*.sql.gz (gzip, mit Aufräumen alter Backups)
+./create-user.sh <username> <passwort> [admin|viewer]   # Nutzer anlegen bzw. Passwort zurücksetzen
+./backup-db.sh                                          # DB sichern nach backups/*.sql.gz (gzip, mit Aufräumen alter Backups)
 ```
 
 Details (Cron-Einrichtung, Restore, benötigtes DB-Client-Tool) in [docs/DEPLOYMENT-SYNOLOGY.md](docs/DEPLOYMENT-SYNOLOGY.md).

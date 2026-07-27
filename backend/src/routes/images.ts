@@ -2,6 +2,17 @@ import { FastifyInstance } from 'fastify';
 import { db } from '../db';
 import { runImageDownload } from '../services/imageDownload';
 
+// Manche Fehlschläge sind kein Betriebsproblem, sondern die Quelle liefert das
+// Bild schlicht dauerhaft nicht mehr aus (typisch bei alten Promo-Karten) —
+// ein erneuter Lauf würde immer wieder denselben "HTTP 404" produzieren, egal
+// wie oft man es versucht. "HTTP 429" (Rate-Limit) zählt bewusst NICHT dazu,
+// da retry-fähig/vorübergehend. Alles andere (EROFS, ECONNREFUSED, HTTP 5xx, …)
+// deutet auf ein echtes Infrastruktur-/Netzwerkproblem hin und soll den Job
+// weiterhin als "failed" markieren.
+function isPermanentSourceMiss(message: string): boolean {
+  return /^HTTP 4\d\d$/.test(message) && message !== 'HTTP 429';
+}
+
 /** Führt einen Bild-Download als Hintergrund-Job aus und protokolliert ihn in image_jobs. */
 export async function runImageDownloadJob(
   gameCode: string | undefined,
@@ -38,12 +49,22 @@ export async function runImageDownloadJob(
     setMessage(msg);
   })
     .then(async (stats) => {
+      const realFailures = stats.errors.filter((e) => !isPermanentSourceMiss(e.message)).length;
+      const permanentMisses = stats.failed - realFailures;
       const message = stats.noopDownload
         ? 'Bilder waren bereits aktuell — kein Download nötig.'
-        : `Fertig: ${stats.downloaded} geladen, ${stats.failed} fehlgeschlagen, ${stats.pathsSet} Pfade aktualisiert.`;
+        : `Fertig: ${stats.downloaded} geladen, ${stats.failed} fehlgeschlagen` +
+          (permanentMisses > 0
+            ? ` (davon ${permanentMisses} dauerhaft nicht mehr bei der Quelle verfügbar, ${realFailures} echte Fehler)`
+            : '') +
+          `, ${stats.pathsSet} Pfade aktualisiert.`;
       await messageQueue; // sicherstellen, dass kein Zwischenstand mehr nachläuft
       await db('image_jobs').where('id', jobId).update({
-        status: stats.failed > 0 && stats.downloaded === 0 ? 'failed' : 'completed',
+        // "failed" nur bei echten Fehlern — dauerhaft nicht mehr vorhandene
+        // Quellbilder (HTTP 404 o. Ä.) sind kein Betriebsproblem und würden bei
+        // jedem künftigen Lauf (auch im täglichen Cron) sonst wieder als
+        // Fehlschlag erscheinen, obwohl sich daran nie etwas ändern wird.
+        status: realFailures > 0 ? 'failed' : 'completed',
         finished_at: db.fn.now(),
         stats: JSON.stringify(stats),
         message,

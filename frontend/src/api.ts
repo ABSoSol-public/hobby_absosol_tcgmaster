@@ -87,6 +87,13 @@ export const api = {
   updateCollectionItem: (id: number, body: Record<string, unknown>) =>
     request<{ data: CollectionItem }>(`/collection/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteCollectionItem: (id: number) => request<void>(`/collection/${id}`, { method: 'DELETE' }),
+  // Schnell-Hinzufügen (+1): Standardzustand NM/DE, immer 1. Auflage.
+  quickAddOne: (printId: number) =>
+    request<{ data: CollectionItem }>('/collection', {
+      method: 'POST',
+      body: JSON.stringify({ print_id: printId, quantity: 1, condition: 'NM', language: 'DE', is_first_edition: true }),
+    }),
+  quickRemoveOne: (printId: number) => request<void>(`/collection/by-print/${printId}/one`, { method: 'DELETE' }),
 
   startImport: (game: string) =>
     request<{ data: { jobId: number; status: string } }>(`/imports/${game}`, { method: 'POST' }),

@@ -8,12 +8,12 @@ Niemals Tabellen von Hand ändern — immer eine neue Migration anlegen (`npx kn
 Das Schema trennt drei Ebenen, die für **alle** Sammelkartenspiele identisch funktionieren:
 
 1. **Karte** (`cards`) — die logische Karte („Blauäugiger w. Drache"), unabhängig davon, wo sie gedruckt wurde.
-2. **Print** (`card_prints`) — ein konkreter Druck dieser Karte in einem Set mit Set-Nummer und Seltenheit („LOB-DE001, Ultra Rare"). Eine Karte hat oft viele Prints.
+2. **Print** (`card_prints`) — ein konkreter Druck dieser Karte in einem Set mit Set-Nummer und Seltenheit („LOB-EN001, Ultra Rare" — die Quellen liefern durchgehend nur den englischen Referenz-Code, auch für Karten mit deutscher TCG-Ausgabe; die Kartensuche behandelt das Sprachkürzel deshalb als Wildcard, siehe `backend/src/services/cardNumbers.ts`). Eine Karte hat oft viele Prints.
 3. **Sammlungseintrag** (`collection_items`) — physisch besessene Exemplare eines Prints mit Menge, Zustand, Sprache, 1. Auflage, Lagerort, Kaufpreis.
 
 Gesammelt wird also immer ein **Print**, nicht die abstrakte Karte — genau wie bei cardcluster.
 
-Spielspezifische Attribute (ATK/DEF, Level, Attribut bei Yu-Gi-Oh!; später Manakosten bei Magic, Ink bei Lorcana, …) liegen als JSON in `cards.game_data`. Dadurch braucht ein neues Spiel **keine Schemaänderung**, nur einen neuen Importer.
+Spielspezifische Attribute (ATK/DEF/Level/Attribut bei Yu-Gi-Oh!, Manakosten/Farben bei Magic, Ink/Stärke/Willenskraft bei Lorcana, HP/Typ bei Pokémon, Energy/Might/Domäne bei Riftbound, …) liegen als JSON in `cards.game_data` (Details je Spiel weiter unten). Dadurch braucht ein neues Spiel **keine Schemaänderung**, nur einen neuen Importer.
 
 ## ER-Diagramm
 
@@ -22,10 +22,14 @@ erDiagram
     games ||--o{ card_sets : "hat"
     games ||--o{ cards : "hat"
     games ||--o{ import_jobs : "protokolliert"
+    games ||--o{ image_jobs : "protokolliert (game_id optional)"
+    games ||--o{ decks : "hat"
     cards ||--o{ card_prints : "gedruckt als"
     card_sets ||--o{ card_prints : "enthält"
     card_prints ||--o{ collection_items : "gesammelt als"
     card_prints ||--o{ price_history : "Preisverlauf"
+    decks ||--o{ deck_cards : "enthält"
+    cards ||--o{ deck_cards : "referenziert"
 
     games {
         int id PK
@@ -40,6 +44,8 @@ erDiagram
         string name
         date release_date
         int card_count
+        string image_url "externe Quell-URL, wird nie ausgeliefert"
+        string image_path "lokaler Pfad relativ zu IMAGES_DIR"
     }
     cards {
         int id PK
@@ -49,17 +55,24 @@ erDiagram
         string name_de
         string card_type
         text card_text
-        string image_url
-        json game_data "spielspezifisch"
+        text card_text_de
+        string image_url "externe Quell-URL, wird nie ausgeliefert"
+        string image_small_url
+        string image_path "lokaler Pfad relativ zu IMAGES_DIR"
+        string image_small_path
+        json game_data "spielspezifisch, siehe unten"
         string content_hash "Fingerabdruck für Delta-Import"
     }
     card_prints {
         int id PK
         int card_id FK
         int set_id FK
-        string collector_number "z.B. LOB-DE001"
+        string collector_number "z.B. LOB-EN001"
         string rarity
+        string rarity_code
         decimal market_price
+        string currency "EUR|USD, siehe Preise-Abschnitt unten"
+        string marketplace_url "Cardmarket-Direktlink, wo verfügbar"
         string content_hash "Fingerabdruck für Delta-Import"
     }
     collection_items {
@@ -88,10 +101,32 @@ erDiagram
         string source_version "z.B. YGOPRODeck database_version|last_update"
         timestamp checked_at
     }
+    image_jobs {
+        int id PK
+        int game_id FK "nullable — leer = alle Spiele"
+        enum status "running completed failed"
+        timestamp started_at
+        timestamp finished_at
+        json stats "totalRefs, downloaded, failed, ..."
+    }
+    decks {
+        int id PK
+        int game_id FK
+        string name
+        text description
+    }
+    deck_cards {
+        int id PK
+        int deck_id FK
+        int card_id FK
+        enum zone "main extra side"
+        int quantity
+    }
     users {
         int id PK
         string username UK
         string password_hash "bcrypt, nie im Klartext"
+        enum role "admin | viewer, Default admin"
     }
 ```
 
@@ -108,10 +143,11 @@ Das hält sowohl die Anzahl der API-Aufrufe als auch die Zahl der DB-Schreibvorg
 
 Ein neuer Importer für ein weiteres Spiel sollte dasselbe Prinzip übernehmen, muss es aber nicht zwingend — `ImportOptions.force` und die `skipped`/`*Changed`-Felder in `ImportStats` sind Teil des `GameImporter`-Interfaces und werden von Routen/Scripts bereits generisch unterstützt.
 
-## Inhalt von `cards.game_data` bei Yu-Gi-Oh!
+## Inhalt von `cards.game_data` je Spiel
 
-Vom YGOPRODeck-Importer befüllt, z. B.:
+Jeder Importer befüllt `game_data` mit seinen eigenen, spielspezifischen Feldern (Details siehe `backend/src/services/importers/<spiel>.ts`) — die Filter-UI liest diese Felder generisch über `backend/src/services/gameConfig.ts`, ein neues Feld braucht also **keine** Schemaänderung.
 
+**Yu-Gi-Oh!** (YGOPRODeck-Importer):
 ```json
 {
   "frameType": "effect",
@@ -122,15 +158,60 @@ Vom YGOPRODeck-Importer befüllt, z. B.:
   "def": 2500,
   "archetype": "Blue-Eyes",
   "linkval": null,
-  "scale": null
+  "scale": null,
+  "banTcg": null
 }
 ```
 
-Für spätere Spiele analog (Magic: `{ "manaCost": "{2}{U}", "colors": ["U"], ... }`).
+**Magic: The Gathering** (Scryfall-Importer):
+```json
+{ "colors": "UB", "cmc": 4, "mana_cost": "{2}{U}{B}" }
+```
+(`colors` ist ein zusammengezogener String, z. B. `"C"` für farblos; `cmc` = Converted Mana Cost.)
+
+**Pokémon TCG** (pokemontcg.io-Importer):
+```json
+{ "type": "Water", "types": "Water", "subtypes": "Basic", "hp": 70, "evolvesFrom": null, "rarity": "Common" }
+```
+
+**Disney Lorcana** (lorcanajson.org-Importer):
+```json
+{ "ink": "Amber", "cost": 3, "lore": 2, "strength": 2, "willpower": 3, "inkwell": true, "rarity": "Common", "story": "..." }
+```
+
+**Riftbound** (riftcodex.com-Importer):
+```json
+{ "energy": 2, "might": 4, "power": null, "domain": ["Fury"], "supertype": "Champion", "rarity": "Rare", "tags": [...], "artist": "...", "flavour": "...", "riftbound_id": "unl-116a-219" }
+```
 
 ## Deutsche Lokalisierung (`name_de`, `card_text_de`)
 
-Der Importer lädt zusätzlich zum englischen Katalog den deutschen Katalog von YGOPRODeck (`cardinfo.php?language=de`) und befüllt `name_de`/`card_text_de`. Nicht jede Karte hat eine deutsche TCG-Ausgabe (Stand des ersten Imports: 11.769 von 14.472 Karten) — in dem Fall bleiben beide Felder `null`. Das Frontend zeigt automatisch `name_de || name` bzw. `card_text_de || card_text` an, es ist also keine gesonderte Sprachumschaltung nötig.
+Je Spiel unterschiedlich befüllt, Frontend zeigt in allen Fällen automatisch `name_de || name` bzw. `card_text_de || card_text` an — keine gesonderte Sprachumschaltung pro Spiel nötig:
+
+- **Yu-Gi-Oh!**: Importer lädt zusätzlich zum englischen Katalog den deutschen Katalog von YGOPRODeck (`cardinfo.php?language=de`). Nicht jede Karte hat eine deutsche TCG-Ausgabe (Stand des ersten Imports: 11.769 von 14.472 Karten) — dann bleiben beide Felder `null`.
+- **Disney Lorcana**: lorcanajson.org liefert DE und EN direkt in einem Rutsch, keine Lücken zu erwarten.
+- **Riftbound**: Die API (riftcodex.com) liefert nur Englisch — eigene Übersetzungsdatei `backend/src/data/riftbound.de.json` (989 von Claude übersetzte Karten, **nicht** die offiziellen Riot-Lokalisierungen). Icon-Platzhalter und Schlüsselwörter in eckigen Klammern (`[Deflect]` etc.) bleiben unübersetzt.
+- **Magic, Pokémon**: keine deutschen Texte — bei Magic bräuchte es dafür Scryfalls deutlich größere `all_cards`-Bulk-Datei (2,5 GB statt 557 MB), bei Pokémon liefert die Quelle grundsätzlich nur Englisch.
+
+## Preise, Währung und Marktplatz-Links (`card_prints.market_price`/`currency`/`marketplace_url`)
+
+`market_price` ist **nicht** einheitlich in einer Währung — `currency` (seit 2026-07-21, Migration `20260721000002_print_currency.js`) sagt, welche:
+
+| Spiel | Quelle | Währung | Granularität |
+|---|---|---|---|
+| Yu-Gi-Oh! | YGOPRODeck `card_sets[].set_price` (TCGPlayer) | **USD** | je Print/Rarität |
+| Magic | Scryfall `prices.eur` (selbst von Cardmarket bezogen) | EUR | je Print/Rarität |
+| Pokémon | pokemontcg.io `cardmarket.prices.trendPrice` | EUR | je Print/Rarität |
+| Lorcana | `dotgg.gg`-API `cmPrice` (Fallback: kein Preis) | EUR | je Print/Rarität |
+| Riftbound | `dotgg.gg`-API `cmPrice` (Fallback: kein Preis) | EUR | je Print/Rarität |
+
+**Warum Yu-Gi-Oh! USD statt EUR ist**: YGOPRODeck liefert zwar auch einen echten Cardmarket-EUR-Preis (`card_prices[0].cardmarket_price`), aber nur **einmal je Karte**, nicht je Print/Rarität — eine Common und eine Secret Rare derselben Karte hätten damit denselben Preis, was Sammlungswerte verfälscht. Bewusst gegen diesen Trade-off entschieden (Nutzerentscheidung, siehe `PROGRESS.md` 2026-07-21) und bei USD mit korrekter Rarität-Granularität geblieben, statt granular aber falsch beschriftet zu sein.
+
+**Wechselkurs-Umrechnung**: Jede Aggregation über mehrere Prints hinweg (`GET /collection/stats` → `marketValue`, `GET /collection?sort=value`) würde USD- und EUR-Beträge sonst einfach addieren/vergleichen, als wären sie gleich. `backend/src/services/exchangeRate.ts` holt dafür den aktuellen USD→EUR-Kurs von der freien, keylosen EZB-Referenzkurs-API `api.frankfurter.app` (12h gecacht, harter Fallback-Kurs bei Nichterreichbarkeit) und rechnet USD-Prints vor der Summierung um. Einzelpreise (Karten-/Set-Detailseite, Preisverlauf-Diagramm) bleiben unverändert in ihrer nativen Währung — nur spielübergreifende Summen/Sortierungen rechnen um.
+
+**`marketplace_url`**: fertiger Direktlink zur Cardmarket-Produktseite, wo die Quelle einen liefert (Lorcana zusätzlich über `lorcanajson.org`s `externalLinks.cardmarketUrl`, sonst/als Fallback über dieselbe `dotgg.gg`-API wie die Preise). Frontend zeigt bei vorhandenem Link ein „↗"-Icon neben dem Preis.
+
+`dotgg.gg` (Base-URL `api.dotgg.gg`, Endpunkt `/cgfw/getcards?game=<spiel>`) ist eine freie, öffentlich dokumentierte REST-API (`dotgg.gg/api/`, kein Key) des `DotGG`-Netzwerks (betreibt u. a. auch Lorcana.gg, „Pokémon TCG Zone", „Yu-Gi-Oh! Zone") — bewusst nur als Zusatzquelle behandelt (best-effort, liefert bei Fehlern eine leere Map statt den Import zu blockieren), da sie „as-is" ohne Uptime-Garantie dokumentiert ist.
 
 ## Zustands-Skala (`collection_items.condition`)
 
@@ -153,4 +234,4 @@ Danach Zugangsdaten in `.env` eintragen und Migration ausführen:
 cd backend && npm run migrate
 ```
 
-Die Migration legt alle Tabellen an und trägt die fünf Spiele in `games` ein (nur `yugioh` aktiv).
+Die Migration legt alle Tabellen an und trägt die fünf Spiele in `games` ein (`yugioh` von Anfang an aktiv, die anderen vier zunächst inaktiv — jedes Spiel aktiviert sich automatisch nach seinem ersten erfolgreichen Katalog-Import über den jeweiligen Dashboard-Button).

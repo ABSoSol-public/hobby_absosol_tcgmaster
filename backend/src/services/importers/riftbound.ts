@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { GameImporter, ImportOptions, ImportStats } from './types';
-import { chunked, fetchJson, hashOf, upsertSets } from './util';
+import { chunked, fetchDotggCardmarketPrices, fetchJson, hashOf, recordPriceHistory, upsertSets } from './util';
 import translationsJson from '../../data/riftbound.de.json';
 
 // Datenquelle: riftcodex.com — offene REST-API ohne Key (v0.2.0, nur Englisch).
@@ -129,6 +129,14 @@ export const riftboundImporter: GameImporter = {
     //    Die API liefert jede Druckvariante (Alt Art, Promos, …) als eigenen Eintrag;
     //    unser Schema trennt Karte (cards) und Druck (card_prints).
     const apiCards = await fetchAllCards(onProgress);
+
+    // Cardmarket-Preise/-Links über die freie dotgg.gg-API — riftcodex.com
+    // selbst liefert keine Preise. Schlüssel dort: "{Set-Code}-{Sammelnummer}"
+    // (z. B. "UNL-205"), unabhängig von riftcodex' eigenem Aufbau verifiziert.
+    onProgress('Lade Cardmarket-Preise (dotgg.gg) …');
+    const cmPrices = await fetchDotggCardmarketPrices('riftbound');
+    onProgress(`${cmPrices.size} Cardmarket-Preise empfangen.`);
+
     const byBaseName = new Map<string, RiftCard[]>();
     for (const c of apiCards) {
       const key = baseName(c.name);
@@ -207,13 +215,23 @@ export const riftboundImporter: GameImporter = {
     const cardIdByExternal = new Map(
       (await db('cards').where('game_id', game.id).select('id', 'external_id')).map((r) => [r.external_id, r.id])
     );
-    const existingPrintHashes = new Map(
+    const existingPrints = new Map(
       (
         await db('card_prints')
           .join('cards', 'card_prints.card_id', 'cards.id')
           .where('cards.game_id', game.id)
-          .select('card_prints.card_id', 'card_prints.set_id', 'card_prints.collector_number', 'card_prints.rarity', 'card_prints.content_hash')
-      ).map((r) => [`${r.card_id}|${r.set_id}|${r.collector_number}|${r.rarity}`, r.content_hash])
+          .select(
+            'card_prints.card_id',
+            'card_prints.set_id',
+            'card_prints.collector_number',
+            'card_prints.rarity',
+            'card_prints.content_hash',
+            'card_prints.market_price'
+          )
+      ).map((r) => [
+        `${r.card_id}|${r.set_id}|${r.collector_number}|${r.rarity}`,
+        { hash: r.content_hash as string | null, price: r.market_price == null ? null : Number(r.market_price) },
+      ])
     );
 
     const printRowsByKey = new Map<string, { row: Record<string, unknown>; hash: string }>();
@@ -223,7 +241,10 @@ export const riftboundImporter: GameImporter = {
       if (!cardId || !setId) continue;
       const collectorNumber = printedNumber(c);
       const rarity = c.classification?.rarity || null;
-      const contentHash = hashOf({ rarity_code: null, market_price: null });
+      const cm = cmPrices.get(`${c.set?.set_id || ''}-${collectorNumber}`);
+      const marketPrice = cm?.price ?? null;
+      const marketplaceUrl = cm?.url ?? null;
+      const contentHash = hashOf({ rarity_code: null, market_price: marketPrice, marketplace_url: marketplaceUrl, currency: 'EUR' });
       printRowsByKey.set(`${cardId}|${setId}|${collectorNumber}|${rarity}`, {
         hash: contentHash,
         row: {
@@ -232,19 +253,45 @@ export const riftboundImporter: GameImporter = {
           collector_number: collectorNumber,
           rarity,
           rarity_code: null,
-          market_price: null,
+          market_price: marketPrice,
+          currency: 'EUR',
+          marketplace_url: marketplaceUrl,
           content_hash: contentHash,
         },
       });
     }
     const changedPrintRows = [...printRowsByKey.entries()]
-      .filter(([key, p]) => existingPrintHashes.get(key) !== p.hash)
+      .filter(([key, p]) => existingPrints.get(key)?.hash !== p.hash)
       .map(([, p]) => p.row);
     for (const chunk of chunked(changedPrintRows)) {
       await db('card_prints')
         .insert(chunk)
         .onConflict(['card_id', 'set_id', 'collector_number', 'rarity'])
-        .merge(['rarity_code', 'market_price', 'content_hash']);
+        .merge(['rarity_code', 'market_price', 'currency', 'marketplace_url', 'content_hash']);
+    }
+
+    // Preis-Historie: Snapshot für alle Prints, deren Preis neu ist oder sich geändert hat.
+    const priceChangedKeys = [...printRowsByKey.entries()].filter(([key, p]) => {
+      const newPrice = p.row.market_price as number | null;
+      if (newPrice == null) return false;
+      const before = existingPrints.get(key);
+      return !before || before.price !== newPrice;
+    });
+    if (priceChangedKeys.length) {
+      const idByKey = new Map(
+        (
+          await db('card_prints')
+            .join('cards', 'card_prints.card_id', 'cards.id')
+            .where('cards.game_id', game.id)
+            .select('card_prints.id', 'card_prints.card_id', 'card_prints.set_id', 'card_prints.collector_number', 'card_prints.rarity')
+        ).map((r) => [`${r.card_id}|${r.set_id}|${r.collector_number}|${r.rarity}`, r.id as number])
+      );
+      const written = await recordPriceHistory(
+        priceChangedKeys.map(([key, p]) => ({ print_id: idByKey.get(key) || 0, price: p.row.market_price as number })),
+        'dotgg',
+        'EUR'
+      );
+      onProgress(`Preis-Historie: ${written} Snapshots geschrieben.`);
     }
 
     await db('import_state')

@@ -16,13 +16,15 @@ Basis-URL: `/api/v1` (im Docker-Setup über nginx erreichbar unter `http://<syno
 
 ## Authentifizierung
 
-Alle `/api/v1/*`-Routen (außer `auth/login`) verlangen eine gültige Session. Die Session ist ein JWT im **httpOnly-Cookie** `token` (30 Tage gültig) — das Frontend muss dafür nichts tun, der Browser sendet es automatisch mit, solange Frontend und API same-origin sind (Vite-Proxy in der Entwicklung, nginx im Docker-Setup). Keine öffentliche Registrierung: Accounts legt ein Admin per CLI an (`npm run user:create -- <username> <passwort>` im `backend`-Verzeichnis, siehe [docs/DEPLOYMENT-SYNOLOGY.md](DEPLOYMENT-SYNOLOGY.md)).
+Alle `/api/v1/*`-Routen (außer `auth/login`) verlangen eine gültige Session. Die Session ist ein JWT im **httpOnly-Cookie** `token` (30 Tage gültig) — das Frontend muss dafür nichts tun, der Browser sendet es automatisch mit, solange Frontend und API same-origin sind (Vite-Proxy in der Entwicklung, nginx im Docker-Setup). Keine öffentliche Registrierung: Accounts legt ein Admin per CLI an (`npm run user:create -- <username> <passwort> [admin|viewer]` im `backend`-Verzeichnis, siehe [docs/DEPLOYMENT-SYNOLOGY.md](DEPLOYMENT-SYNOLOGY.md)).
 
-`POST /api/v1/auth/login` — `{ "username", "password" }` → setzt das Session-Cookie, Antwort `{ "data": { "id", "username" } }`. `401` bei falschen Zugangsdaten.
+**Rollen** (seit 2026-07-27): `admin` (Standard, voller Zugriff) oder `viewer` (nur Lesezugriff). Die Rolle steckt im JWT und wird bei **jedem** nicht-lesenden Request (alles außer `GET`/`HEAD`/`OPTIONS`) geprüft (`blockWriteForViewer`-Hook in `backend/src/app.ts`) — ein `viewer`-Account bekommt dort durchgehend `403`, unabhängig von der Route. Ändert sich die Rolle eines Nutzers, greift das erst nach erneutem Login (die Rolle ist im bereits ausgestellten JWT eingefroren).
+
+`POST /api/v1/auth/login` — `{ "username", "password" }` → setzt das Session-Cookie, Antwort `{ "data": { "id", "username", "role" } }`. `401` bei falschen Zugangsdaten.
 
 `POST /api/v1/auth/logout` — löscht das Session-Cookie (`204`).
 
-`GET /api/v1/auth/me` — liefert den aktuell angemeldeten User (`{ "data": { "id", "username" } }`) oder `401`, falls keine/eine abgelaufene Session vorliegt. Prüft das Frontend beim App-Start.
+`GET /api/v1/auth/me` — liefert den aktuell angemeldeten User (`{ "data": { "id", "username", "role" } }`) oder `401`, falls keine/eine abgelaufene Session vorliegt. Prüft das Frontend beim App-Start.
 
 `/images/...` (statische Kartenbilder, **nicht** unter `/api/v1`) bleibt bewusst ohne Login erreichbar — reine Kartengrafiken ohne Sammlungs-/Personenbezug.
 
@@ -69,7 +71,7 @@ GET /api/v1/games/magic/cards?color=U&type=Instant
 
 `GET /api/v1/collection` — Query: `game` (Spielcode), `search`, `page`, `limit`.
 
-`GET /api/v1/collection/stats` — Query optional: `game`. Liefert `totalCopies`, `distinctCards`, `distinctPrints`, `purchaseValue`, `marketValue`.
+`GET /api/v1/collection/stats` — Query optional: `game`. Liefert `totalCopies`, `distinctCards`, `distinctPrints`, `purchaseValue`, `marketValue`. `marketValue` ist immer in EUR — Prints mit `currency: 'USD'` (aktuell nur Yu-Gi-Oh!) werden vor der Summierung per aktuellem Wechselkurs umgerechnet (`services/exchangeRate.ts`), sonst würde die Summe USD- und EUR-Beträge einfach addieren. `sort=value` bei `GET /collection` rechnet ebenso um.
 
 `POST /api/v1/collection` — Print zur Sammlung hinzufügen (erhöht die Menge, falls derselbe Print in gleichem Zustand/Sprache/Auflage bereits existiert).
 
@@ -138,11 +140,11 @@ Verfügbare Importer und ihre Quellen:
 
 | Spiel | Quelle | Besonderheiten |
 |---|---|---|
-| `yugioh` | YGOPRODeck API | DE-Namen/-Texte, Preise (USD) |
+| `yugioh` | YGOPRODeck API | DE-Namen/-Texte, TCGPlayer-Preise (**USD**, `card_sets[].set_price`, je Print/Seltenheit) — bewusst nicht auf Cardmarket-EUR umgestellt, da diese Quelle Cardmarket-Preise nur einmal je Karte liefert (keine Rarität-Granularität), was den Sammlungswert verfälschen würde; `card_prints.currency` markiert das korrekt als `USD` statt es fälschlich als „€" zu zeigen |
 | `pokemon` | pokemontcg.io v2 | optionaler `POKEMON_TCG_API_KEY` in `.env` (ohne Key stark ratenlimitiert), Cardmarket-Preise (EUR) |
 | `magic` | Scryfall Bulk Data (`default_cards`) | ~550 MB, wird streamend geparst; nur Papier-Prints; Preise (EUR) |
-| `lorcana` | lorcanajson.org | DE-Namen/-Texte, keine Preise |
-| `riftbound` | riftcodex.com | DE-Namen/-Texte aus eigener Übersetzungsdatei (`backend/src/data/riftbound.de.json`), keine Preise; Varianten (Alt Art/Overnumbered/Signature) werden als Prints derselben Karte geführt |
+| `lorcana` | lorcanajson.org | DE-Namen/-Texte; Cardmarket-Preise (EUR) zusätzlich über die freie `dotgg.gg`-API (`api.dotgg.gg/cgfw/getcards?game=lorcana`), Marktplatz-Direktlink primär aus `externalLinks.cardmarketUrl` |
+| `riftbound` | riftcodex.com | DE-Namen/-Texte aus eigener Übersetzungsdatei (`backend/src/data/riftbound.de.json`); Cardmarket-Preise (EUR) zusätzlich über `api.dotgg.gg/cgfw/getcards?game=riftbound` (riftcodex selbst liefert keine Preise); Varianten (Alt Art/Overnumbered/Signature) werden als Prints derselben Karte geführt |
 
 Nach dem ersten erfolgreichen Import wird das Spiel automatisch auf `active` gesetzt und taucht im Frontend-Spielumschalter auf. Der Delta-Cron (`npm run import:delta` bzw. `cron-delta-import.sh`) aktualisiert alle aktiven Spiele.
 
@@ -152,6 +154,7 @@ Nach dem ersten erfolgreichen Import wird das Spiel automatisch auf `active` ges
 |---|---|
 | 400 | Ungültiger Request-Body (z. B. unbekannter `condition`-Wert) |
 | 401 | Keine/ungültige Session (Login-Cookie fehlt oder abgelaufen) |
+| 403 | Eingeloggt, aber Rolle `viewer` versucht einen schreibenden Request (alles außer GET/HEAD/OPTIONS) |
 | 404 | Ressource nicht gefunden |
 | 409 | Konflikt (z. B. Import läuft bereits) |
 | 500 | Serverfehler (siehe Backend-Logs) |

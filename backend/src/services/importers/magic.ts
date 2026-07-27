@@ -221,7 +221,8 @@ export const magicImporter: GameImporter = {
           rarity: p.rarity,
           rarity_code: p.rarity ? p.rarity[0].toUpperCase() : null,
           market_price: p.price,
-          content_hash: hashOf({ rarity_code: p.rarity ? p.rarity[0].toUpperCase() : null, market_price: p.price }),
+          currency: 'EUR',
+          content_hash: hashOf({ rarity_code: p.rarity ? p.rarity[0].toUpperCase() : null, market_price: p.price, currency: 'EUR' }),
         },
       });
     }
@@ -233,7 +234,7 @@ export const magicImporter: GameImporter = {
       await db('card_prints')
         .insert(chunk)
         .onConflict(['card_id', 'set_id', 'collector_number', 'rarity'])
-        .merge(['rarity_code', 'market_price', 'content_hash']);
+        .merge(['rarity_code', 'market_price', 'currency', 'content_hash']);
       done += chunk.length;
       if (done % 20000 < 500) onProgress(`Prints aktualisiert: ${done}/${changedPrintRows.length}`);
     }

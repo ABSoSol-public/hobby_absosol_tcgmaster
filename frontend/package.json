@@ -1,6 +1,6 @@
 {
   "name": "tcg-collection-frontend",
-  "version": "1.0.0",
+  "version": "1.11.0",
   "description": "Web-Frontend des TCG Collection Managers",
   "license": "MIT",
   "type": "module",

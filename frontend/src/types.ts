@@ -54,6 +54,7 @@ export interface Print {
   rarity: string | null;
   rarity_code: string | null;
   market_price: string | null;
+  currency?: string;
   set_name?: string;
   set_code?: string;
   set_release_date?: string | null;
@@ -64,6 +65,7 @@ export interface Print {
   image_url?: string | null;
   ownedQuantity?: number;
   collectionItems?: CollectionItem[];
+  marketplace_url?: string | null;
 }
 
 export interface CardDetail extends Card {
@@ -73,6 +75,7 @@ export interface CardDetail extends Card {
 export interface AuthUser {
   id: number;
   username: string;
+  role: 'admin' | 'viewer';
 }
 
 export interface PriceHistoryEntry {
@@ -120,6 +123,7 @@ export interface CollectionItem {
   collector_number?: string | null;
   rarity?: string | null;
   market_price?: string | null;
+  currency?: string;
   set_name?: string;
   set_code?: string;
   game_code?: string;

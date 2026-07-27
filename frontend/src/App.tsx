@@ -47,7 +47,10 @@ export default function App() {
               <button className={lang === 'de' ? 'active' : ''} onClick={() => setLang('de')}>DE</button>
               <button className={lang === 'en' ? 'active' : ''} onClick={() => setLang('en')}>EN</button>
             </div>
-            <span className="muted user-chip">{user.username}</span>
+            <span className="muted user-chip">
+              {user.username}
+              {user.role === 'viewer' && <span className="badge-viewer">{t('auth_role_viewer')}</span>}
+            </span>
             <button className="btn small" onClick={logout}>{t('auth_logout')}</button>
           </div>
         </div>

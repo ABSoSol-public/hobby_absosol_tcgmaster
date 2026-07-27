@@ -13,3 +13,6 @@ data_import/
 # Persönliches Session-/Entwicklungs-Tagebuch mit Infrastruktur-Details für den
 # eigenen Betrieb — bewusst nicht Teil des öffentlichen Repos.
 PROGRESS.md
+# Anleitung zum Live-Testen gegen die eigene Synology — enthält echte
+# Zugangsdaten/Domain, bewusst nicht Teil des öffentlichen Repos.
+TESTING-SYNOLOGY.md
