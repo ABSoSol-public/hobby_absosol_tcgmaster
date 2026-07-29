@@ -86,6 +86,7 @@ const dict = {
   dash_games_status: { de: 'Status', en: 'Status' },
   dash_games_catalog_count: { de: 'Karten im Katalog', en: 'Cards in catalog' },
   dash_games_collected: { de: 'In Sammlung', en: 'In collection' },
+  dash_games_collected_unique: { de: 'Davon einzigartig', en: 'Unique owned' },
   dash_games_active: { de: 'aktiv', en: 'active' },
   dash_games_planned: { de: 'geplant', en: 'planned' },
   dash_games_import: { de: 'Importieren', en: 'Import' },

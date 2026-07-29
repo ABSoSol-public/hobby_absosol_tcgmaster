@@ -14,6 +14,7 @@ export interface Game {
   active: boolean;
   cardCount: number;
   collectedCount: number;
+  collectedDistinctCount: number;
 }
 
 export interface GameData {

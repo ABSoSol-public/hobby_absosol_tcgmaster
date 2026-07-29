@@ -173,7 +173,7 @@ export default function Dashboard() {
       <div className="table-wrap panel" style={{ padding: 0 }}>
         <table>
           <thead>
-            <tr><th>{t('dash_games_game')}</th><th>{t('dash_games_status')}</th><th>{t('dash_games_catalog_count')}</th><th>{t('dash_games_collected')}</th><th></th></tr>
+            <tr><th>{t('dash_games_game')}</th><th>{t('dash_games_status')}</th><th>{t('dash_games_catalog_count')}</th><th>{t('dash_games_collected')}</th><th>{t('dash_games_collected_unique')}</th><th></th></tr>
           </thead>
           <tbody>
             {games.map((g) => (
@@ -182,6 +182,7 @@ export default function Dashboard() {
                 <td>{g.active ? <span style={{ color: 'var(--green)' }}>{t('dash_games_active')}</span> : <span className="muted">{t('dash_games_planned')}</span>}</td>
                 <td>{g.cardCount.toLocaleString(locale)}</td>
                 <td>{g.collectedCount.toLocaleString(locale)}</td>
+                <td>{g.collectedDistinctCount.toLocaleString(locale)}</td>
                 <td style={{ textAlign: 'right' }}>
                   {IMPORTABLE.has(g.code) ? (
                     canEdit && (
