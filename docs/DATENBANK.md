@@ -1,5 +1,7 @@
 # Datenbank
 
+*[English version](DATENBANK.en.md)*
+
 MariaDB-Schema `tcg_collection`, verwaltet über **Knex-Migrationen** (`backend/migrations/`).
 Niemals Tabellen von Hand ändern — immer eine neue Migration anlegen (`npx knex migrate:make <name>`).
 

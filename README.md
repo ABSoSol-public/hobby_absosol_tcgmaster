@@ -1,5 +1,7 @@
 # TCG Collection Manager
 
+*[English version](README.en.md)*
+
 **Version 1.11** — geplante nächste Schritte in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Selbstgehostete Sammelkartenverwaltung im Stil von **cardcluster** — für **Yu-Gi-Oh!, Pokémon TCG, Magic: The Gathering, Riftbound und Disney Lorcana**.

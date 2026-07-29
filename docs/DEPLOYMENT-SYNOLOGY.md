@@ -1,5 +1,7 @@
 # Deployment auf der Synology
 
+*[English version](DEPLOYMENT-SYNOLOGY.en.md)*
+
 Voraussetzungen: Synology mit **Container Manager** (DSM 7.2+) und einer laufenden **MariaDB** (z. B. via Paket "MariaDB 10" oder eigener Container).
 
 ## 1. Datenbank vorbereiten

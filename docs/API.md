@@ -1,5 +1,7 @@
 # REST-API
 
+*[English version](API.en.md)*
+
 Basis-URL: `/api/v1` (im Docker-Setup über nginx erreichbar unter `http://<synology-ip>:8080/api/v1`).
 
 ## Konventionen

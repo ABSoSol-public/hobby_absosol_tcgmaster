@@ -1,5 +1,7 @@
 # Architektur
 
+*[English version](ARCHITEKTUR.en.md)*
+
 ## Überblick
 
 Das System besteht aus drei klar getrennten Schichten, die ausschließlich über definierte Schnittstellen kommunizieren:
