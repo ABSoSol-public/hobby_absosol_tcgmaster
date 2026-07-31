@@ -46,6 +46,7 @@ export async function collectionRoutes(app: FastifyInstance) {
       condition?: string;
       language?: string;
       first_edition?: string;
+      set?: string;
     };
   }>('/collection', async (req) => {
     const page = Math.max(1, Number(req.query.page || 1));
@@ -58,6 +59,7 @@ export async function collectionRoutes(app: FastifyInstance) {
       .join('games', 'cards.game_id', 'games.id');
 
     if (req.query.game) query.where('games.code', req.query.game);
+    if (req.query.set) query.where('card_prints.set_id', Number(req.query.set));
     if (req.query.search) {
       query.where((qb) => {
         qb.where('cards.name', 'like', `%${req.query.search}%`).orWhere(
@@ -120,6 +122,30 @@ export async function collectionRoutes(app: FastifyInstance) {
       data: rows.map(withLocalImages),
       pagination: { page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) },
     };
+  });
+
+  // Sets, die tatsächlich in der Sammlung vorkommen (für den Set-Filter der
+  // Sammlungsliste) — spielübergreifend, optional per game eingeschränkt.
+  // Bewusst eine eigene, kleine Liste statt der vollen games/:code/sets-Route,
+  // da hier nur die Sets mit mindestens einem Sammlungseintrag interessieren.
+  app.get<{ Querystring: { game?: string } }>('/collection/sets', async (req) => {
+    const query = db('collection_items')
+      .join('card_prints', 'collection_items.print_id', 'card_prints.id')
+      .join('card_sets', 'card_prints.set_id', 'card_sets.id')
+      .join('games', 'card_sets.game_id', 'games.id');
+    if (req.query.game) query.where('games.code', req.query.game);
+
+    const rows = await query
+      .distinct(
+        'card_sets.id as id',
+        'card_sets.code as code',
+        'card_sets.name as name',
+        'games.code as game_code',
+        'games.name as game_name'
+      )
+      .orderBy(['games.name', 'card_sets.name']);
+
+    return { data: rows };
   });
 
   // Sammlungsstatistik (Dashboard)

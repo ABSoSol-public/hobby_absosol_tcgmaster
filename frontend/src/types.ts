@@ -132,6 +132,14 @@ export interface CollectionItem {
   game_code?: string;
 }
 
+export interface CollectionSetOption {
+  id: number;
+  code: string;
+  name: string;
+  game_code: string;
+  game_name: string;
+}
+
 export interface CollectionStats {
   totalCopies: number;
   distinctCards: number;

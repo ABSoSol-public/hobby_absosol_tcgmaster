@@ -7,7 +7,7 @@ import Paginator from '../components/Paginator';
 import ScanCardModal from '../components/ScanCardModal';
 import { useGame } from '../game';
 import { useLanguage } from '../i18n';
-import { CONDITION_LABELS, CardNavState, CollectionItem, LANGUAGES, Pagination } from '../types';
+import { CONDITION_LABELS, CardNavState, CollectionItem, CollectionSetOption, LANGUAGES, Pagination } from '../types';
 
 function itemName(it: { card_name?: string; card_name_de?: string | null }, lang: string): string {
   return lang === 'de' ? it.card_name_de || it.card_name || '' : it.card_name || it.card_name_de || '';
@@ -22,6 +22,7 @@ export default function CollectionPage() {
     v != null ? Number(v).toLocaleString(locale, { style: 'currency', currency }) : '—';
   const [params, setParams] = useSearchParams();
   const [items, setItems] = useState<CollectionItem[]>([]);
+  const [setOptions, setSetOptions] = useState<CollectionSetOption[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export default function CollectionPage() {
     api
       .collection({
         game: get('game') || undefined,
+        set: get('set') || undefined,
         search: get('search'),
         page: get('page') || 1,
         limit: 50,
@@ -68,6 +70,12 @@ export default function CollectionPage() {
   }
 
   useEffect(load, [params]);
+
+  // Set-Filter-Optionen: nur Sets, die tatsächlich in der Sammlung vorkommen —
+  // bei aktivem Spiel-Filter auf dessen Sets eingeschränkt, sonst spielübergreifend.
+  useEffect(() => {
+    api.collectionSets(get('game') || undefined).then((r) => setSetOptions(r.data)).catch(() => {});
+  }, [get('game')]);
 
   async function remove(item: CollectionItem) {
     if (!confirm(`"${itemName(item, lang)}" ${t('coll_confirm_delete')}`)) return;
@@ -131,9 +139,25 @@ export default function CollectionPage() {
       </div>
 
       <div className="toolbar">
-        <select value={get('game')} onChange={(e) => setParam('game', e.target.value)}>
+        <select
+          value={get('game')}
+          onChange={(e) => {
+            const next = new URLSearchParams(params);
+            if (e.target.value) next.set('game', e.target.value);
+            else next.delete('game');
+            next.delete('set'); // Set gehört ggf. zu einem anderen Spiel — sonst leere Ergebnisliste
+            next.delete('page');
+            setParams(next, { replace: true });
+          }}
+        >
           <option value="">{t('coll_filter_all_games')}</option>
           {gamesWithItems.map((g) => <option key={g.code} value={g.code}>{g.name}</option>)}
+        </select>
+        <select value={get('set')} onChange={(e) => setParam('set', e.target.value)}>
+          <option value="">{t('coll_filter_all_sets')}</option>
+          {setOptions.map((s) => (
+            <option key={s.id} value={s.id}>{get('game') ? s.name : `${s.name} (${s.game_name})`}</option>
+          ))}
         </select>
         <select value={get('sort') || 'newest'} onChange={(e) => setParam('sort', e.target.value === 'newest' ? '' : e.target.value)}>
           <option value="newest">{t('coll_sort_newest')}</option>

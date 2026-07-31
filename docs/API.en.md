@@ -71,7 +71,9 @@ GET /api/v1/games/magic/cards?color=U&type=Instant
 
 ## Collection
 
-`GET /api/v1/collection` — Query: `game` (game code), `search`, `page`, `limit`.
+`GET /api/v1/collection` — Query: `game` (game code), `set` (set `id`, unique across games), `search`, `page`, `limit`, `sort` (`newest`|`oldest`|`name`|`quantity`|`value`), `condition`, `language`, `first_edition` (`1`).
+
+`GET /api/v1/collection/sets` — Query optional: `game`. Returns the sets (`id`, `code`, `name`, `game_code`, `game_name`) that actually have at least one collection item — backs the collection list's set filter (`set` query parameter above), usable across all games.
 
 `GET /api/v1/collection/stats` — Query optional: `game`. Returns `totalCopies`, `distinctCards`, `distinctPrints`, `purchaseValue`, `marketValue`, `hypotheticalValue`. `marketValue` is always in EUR — prints with `currency: 'USD'` (currently only Yu-Gi-Oh!) are converted using the current exchange rate before summation (`services/exchangeRate.ts`), otherwise the sum would simply add up USD and EUR amounts. `sort=value` on `GET /collection` performs the same conversion. `hypotheticalValue` is a purely informational variant of the same sum where every print counts as at least €1 (`GREATEST(price, 1)` per copy) — cards worth €1 or more count at their real (converted) price; `card_prints.market_price` itself is left untouched.
 

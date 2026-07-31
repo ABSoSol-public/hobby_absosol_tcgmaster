@@ -5,6 +5,7 @@ import type {
   CardDetail,
   CardSet,
   CollectionItem,
+  CollectionSetOption,
   CollectionStats,
   Deck,
   DeckDetail,
@@ -82,6 +83,7 @@ export const api = {
   collection: (params: Record<string, string | number | undefined>) =>
     request<ListResponse<CollectionItem>>(`/collection${qs(params)}`),
   collectionStats: (game?: string) => request<{ data: CollectionStats }>(`/collection/stats${qs({ game })}`),
+  collectionSets: (game?: string) => request<{ data: CollectionSetOption[] }>(`/collection/sets${qs({ game })}`),
   addToCollection: (body: Record<string, unknown>) =>
     request<{ data: CollectionItem }>('/collection', { method: 'POST', body: JSON.stringify(body) }),
   updateCollectionItem: (id: number, body: Record<string, unknown>) =>

@@ -206,6 +206,7 @@ const dict = {
   coll_sort_quantity: { de: 'Menge (meiste zuerst)', en: 'Quantity (most first)' },
   coll_sort_value: { de: 'Wert (höchster zuerst)', en: 'Value (highest first)' },
   coll_filter_all_games: { de: 'Alle Spiele', en: 'All games' },
+  coll_filter_all_sets: { de: 'Alle Sets', en: 'All sets' },
   coll_filter_all_conditions: { de: 'Alle Zustände', en: 'All conditions' },
   coll_filter_all_languages: { de: 'Alle Sprachen', en: 'All languages' },
   coll_filter_first_edition: { de: 'Nur 1. Auflage', en: '1st edition only' },
