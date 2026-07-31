@@ -6,22 +6,9 @@ import AddToCollectionModal from '../components/AddToCollectionModal';
 import CardImage from '../components/CardImage';
 import PriceHistoryChart from '../components/PriceHistoryChart';
 import RemoveFromCollectionModal from '../components/RemoveFromCollectionModal';
+import { deVariantHint } from '../cardNumbers';
 import { cardName, cardText, useLanguage } from '../i18n';
 import { CardDetail, CardNavState, Print } from '../types';
-
-// YGOPRODeck (und andere Quellen) liefern Set-Codes nur mit dem englischen
-// Sprachkürzel (z. B. "MP24-EN174"), auch wenn eine deutsche TCG-Ausgabe der
-// Karte existiert und auf ihr ein eigener "-DE"-Code aufgedruckt ist. Diese
-// deutsche Nummer ist in der Quelle schlicht nicht enthalten — daher hier nur
-// eine reine Textableitung (Sprachkürzel ersetzt), keine verifizierte Angabe.
-function deVariantHint(collectorNumber: string | null | undefined, hasGermanRelease: boolean): string | null {
-  if (!collectorNumber || !hasGermanRelease) return null;
-  const m = collectorNumber.match(/^([A-Z0-9]{2,6}-)([A-Z]{1,3})(\d{1,4}[A-Z]?)$/i);
-  if (!m) return null;
-  const [, prefix, lang, number] = m;
-  if (lang.toUpperCase() === 'DE') return null;
-  return `${prefix}DE${number}`;
-}
 
 export default function CardDetailPage() {
   const { id } = useParams();
@@ -149,7 +136,7 @@ export default function CardDetailPage() {
                 {card.prints.map((p) => {
                   const owned = (p.collectionItems || []).reduce((sum, i) => sum + i.quantity, 0);
                   const historyOpen = historyPrintId === p.id;
-                  const deHint = deVariantHint(p.collector_number, Boolean(card.name_de));
+                  const deHint = deVariantHint(p.collector_number, Boolean(card.name_de), p.set_de_prefix);
                   return (
                     <Fragment key={p.id}>
                       <tr>

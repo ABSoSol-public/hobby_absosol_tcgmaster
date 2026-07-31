@@ -89,6 +89,7 @@ export async function collectionRoutes(app: FastifyInstance) {
       'card_prints.flavor_name',
       'card_sets.name as set_name',
       'card_sets.code as set_code',
+      'card_sets.de_prefix as set_de_prefix',
       'games.code as game_code'
     );
     switch (req.query.sort) {

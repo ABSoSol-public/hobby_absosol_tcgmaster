@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 import CardImage from '../components/CardImage';
 import Paginator from '../components/Paginator';
 import ScanCardModal from '../components/ScanCardModal';
+import { deVariantHint } from '../cardNumbers';
 import { useGame } from '../game';
 import { useLanguage } from '../i18n';
 import { CONDITION_LABELS, CardNavState, CollectionItem, CollectionSetOption, LANGUAGES, Pagination } from '../types';
@@ -207,6 +208,7 @@ export default function CollectionPage() {
                   back: { path: `/collection${params.toString() ? `?${params.toString()}` : ''}`, name: t('coll_title') },
                   cardIds: [...new Set(items.map((x) => x.card_id).filter((x): x is number => x != null))],
                 };
+                const deHint = deVariantHint(it.collector_number, Boolean(it.card_name_de), it.set_de_prefix);
                 return (
                 <tr key={it.id}>
                   <td>
@@ -216,7 +218,14 @@ export default function CollectionPage() {
                     <Link to={`/cards/${it.card_id}`} state={navState}>{itemName(it, lang)}</Link>
                     {it.flavor_name && <div className="muted" style={{ fontSize: '0.85em' }}>{t('print_flavor_name_hint')}: „{it.flavor_name}“</div>}
                   </td>
-                  <td>{it.set_code} <span className="muted">{it.collector_number}</span></td>
+                  <td>
+                    {it.set_code} <span className="muted">{it.collector_number}</span>
+                    {deHint && (
+                      <div className="muted" style={{ fontSize: '0.85em' }}>
+                        {t('card_number_de_hint')}: {deHint}
+                      </div>
+                    )}
+                  </td>
                   <td>{it.condition} <span className="muted">({CONDITION_LABELS[it.condition]})</span></td>
                   <td>{it.language}</td>
                   <td>{it.is_first_edition ? <span className="badge-1st">1st</span> : ''}</td>

@@ -5,6 +5,7 @@ import { useAuth } from '../auth';
 import AddToCollectionModal from '../components/AddToCollectionModal';
 import CardImage from '../components/CardImage';
 import RemoveFromCollectionModal from '../components/RemoveFromCollectionModal';
+import { deVariantHint } from '../cardNumbers';
 import { useLanguage } from '../i18n';
 import { CardNavState, Print, SetDetail } from '../types';
 
@@ -82,12 +83,21 @@ export default function SetDetailPage() {
             <tr><th></th><th>{t('col_number')}</th><th>{t('col_card')}</th><th>{t('col_rarity')}</th><th>{t('col_price')}</th><th>{t('col_owned')}</th><th></th></tr>
           </thead>
           <tbody>
-            {visiblePrints.map((p) => (
+            {visiblePrints.map((p) => {
+              const deHint = deVariantHint(p.collector_number, Boolean(p.card_name_de), set.de_prefix);
+              return (
               <tr key={p.id}>
                 <td>
                   <Link to={`/cards/${p.card_id}`} state={navState}><CardImage className="thumb" src={p.image_small_url} alt="" /></Link>
                 </td>
-                <td>{p.collector_number}</td>
+                <td>
+                  {p.collector_number}
+                  {deHint && (
+                    <div className="muted" style={{ fontSize: '0.85em' }}>
+                      {t('card_number_de_hint')}: {deHint}
+                    </div>
+                  )}
+                </td>
                 <td>
                   <Link to={`/cards/${p.card_id}`} state={navState}>{printName(p, lang)}</Link>
                   {p.flavor_name && <div className="muted" style={{ fontSize: '0.85em' }}>{t('print_flavor_name_hint')}: „{p.flavor_name}“</div>}
@@ -141,7 +151,8 @@ export default function SetDetailPage() {
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

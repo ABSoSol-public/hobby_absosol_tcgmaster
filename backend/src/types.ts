@@ -16,6 +16,7 @@ export interface CardSet {
   card_count: number | null;
   image_url: string | null; // Quell-URL (nur intern, wird nie ausgeliefert)
   image_path: string | null; // lokale Kopie relativ zu IMAGES_DIR
+  de_prefix: string | null; // deutscher Sammelnummern-Präfix, falls von Yugipedia bekannt (aktuell nur Yu-Gi-Oh!)
 }
 
 export interface Card {

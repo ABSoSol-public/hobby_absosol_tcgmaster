@@ -1,6 +1,7 @@
 import { db } from '../../db';
 import { GameImporter, ImportOptions, ImportStats } from './types';
 import { CHUNK, chunked, fetchJson, hashOf, recordPriceHistory } from './util';
+import { fetchYugipediaCardTranslation, fetchYugipediaSetDePrefix, mapWithConcurrency } from './yugipedia';
 
 const API_BASE = 'https://db.ygoprodeck.com/api/v7';
 
@@ -98,6 +99,44 @@ export const yugiohImporter: GameImporter = {
     }
     onProgress(`${setRows.length} Sets übernommen.`);
 
+    // 1b) Sekundärquelle Yugipedia: set-spezifischer deutscher Sammelnummern-
+    //     Präfix (z. B. "LOB-G" statt des naiven "LOB-DE") — YGOPRODeck liefert
+    //     dafür keine Daten. Nur bei --force, sonst würde jeder tägliche
+    //     Delta-Import erneut alle Sets gegen Yugipedia prüfen, obwohl sich das
+    //     kaum je ändert. Best-effort: befüllt nur, wo noch kein Präfix bekannt
+    //     ist, überschreibt nie vorhandene Werte.
+    //
+    //     Zusätzlich auf Sets vor 2005 eingegrenzt (+ Sets ohne bekanntes
+    //     Erscheinungsdatum, sicherheitshalber mitgeprüft): Live-Auswertung
+    //     der ersten Läufe zeigt, dass "-G" statt "-DE" ausschließlich in
+    //     diesem frühen Zeitfenster vorkommt (letzter Fund: Ancient Sanctuary,
+    //     2004-05-31 — danach durchgehend "-DE", auch bei neueren Stichproben
+    //     wie den Collectible-Tins-Sets 2011/2013). Ab 2005 gilt die einfache
+    //     "EN"→"DE"-Regel zuverlässig, eine Yugipedia-Abfrage lohnt sich dort
+    //     nicht — spart ca. 90 % der Anfragen (67 statt 636 Sets).
+    if (options.force) {
+      const setsWithoutPrefix = await db('card_sets')
+        .where('game_id', game.id)
+        .whereNull('de_prefix')
+        .where((qb) => {
+          qb.where('release_date', '<', '2005-01-01').orWhereNull('release_date');
+        })
+        .select('id', 'name');
+      onProgress(`Sekundärquelle Yugipedia: prüfe deutschen Sammelnummern-Präfix für ${setsWithoutPrefix.length} Sets vor 2005 (bzw. ohne bekanntes Datum) ohne bekannten Präfix …`);
+      let setsChecked = 0;
+      const dePrefixes = await mapWithConcurrency(setsWithoutPrefix, 5, async (s) => {
+        const prefix = await fetchYugipediaSetDePrefix(s.name);
+        setsChecked++;
+        if (setsChecked % 100 === 0) onProgress(`Yugipedia Set-Präfixe: ${setsChecked}/${setsWithoutPrefix.length} geprüft …`);
+        return { id: s.id, prefix };
+      });
+      const foundPrefixes = dePrefixes.filter((r) => r.prefix);
+      for (const r of foundPrefixes) {
+        await db('card_sets').where('id', r.id).update({ de_prefix: r.prefix });
+      }
+      onProgress(`Yugipedia: ${foundPrefixes.length} deutsche Set-Präfixe gefunden und ergänzt.`);
+    }
+
     // 2) Karten laden und per Content-Hash mit dem bestehenden Bestand vergleichen —
     //    nur tatsächlich geänderte oder neue Karten werden geschrieben. -------------
     onProgress('Lade vollständigen Kartenkatalog (das dauert einen Moment) …');
@@ -111,6 +150,30 @@ export const yugiohImporter: GameImporter = {
       onProgress(`${deByExternalId.size} deutsche Übersetzungen empfangen (nicht jede Karte hat eine deutsche TCG-Ausgabe).`);
     } catch (err) {
       onProgress(`Warnung: deutsche Übersetzungen konnten nicht geladen werden (${(err as Error).message}) — importiere ohne.`);
+    }
+
+    // Sekundärquelle Yugipedia: nur für Karten, denen YGOPRODeck (Primärquelle)
+    // keine deutsche Übersetzung liefert — vorhandene YGOPRODeck-Daten werden
+    // nie überschrieben. Nur bei --force (s. Set-Präfix-Schritt oben, gleiche
+    // Begründung — sonst würden bei jedem Delta-Import erneut tausende Karten
+    // ohne deutsche Ausgabe gegen Yugipedia geprüft).
+    if (options.force) {
+      const missingDe = cards.filter((c) => !deByExternalId.has(String(c.id)));
+      onProgress(`Sekundärquelle Yugipedia: prüfe ${missingDe.length} Karten ohne YGOPRODeck-Übersetzung …`);
+      let deChecked = 0;
+      const translations = await mapWithConcurrency(missingDe, 5, async (c) => {
+        const t = await fetchYugipediaCardTranslation(c.name, String(c.id));
+        deChecked++;
+        if (deChecked % 200 === 0) onProgress(`Yugipedia Übersetzungen: ${deChecked}/${missingDe.length} geprüft …`);
+        return { id: c.id, translation: t };
+      });
+      let foundCount = 0;
+      for (const r of translations) {
+        if (!r.translation) continue;
+        deByExternalId.set(String(r.id), { name: r.translation.name_de, desc: r.translation.card_text_de });
+        foundCount++;
+      }
+      onProgress(`Yugipedia: ${foundCount} zusätzliche deutsche Übersetzungen gefunden und ergänzt.`);
     }
 
     onProgress(`${cards.length} Karten empfangen, vergleiche mit vorhandenem Bestand …`);

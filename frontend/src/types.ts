@@ -59,6 +59,7 @@ export interface Print {
   set_name?: string;
   set_code?: string;
   set_release_date?: string | null;
+  set_de_prefix?: string | null;
   card_name?: string;
   card_name_de?: string | null;
   card_type?: string | null;
@@ -96,6 +97,7 @@ export interface CardSet {
   release_date: string | null;
   card_count: number | null;
   image_url: string | null;
+  de_prefix: string | null;
   printCount: number;
   ownedPrintCount: number;
 }
@@ -129,6 +131,7 @@ export interface CollectionItem {
   flavor_name?: string | null;
   set_name?: string;
   set_code?: string;
+  set_de_prefix?: string | null;
   game_code?: string;
 }
 

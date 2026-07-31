@@ -152,7 +152,8 @@ export async function cardRoutes(app: FastifyInstance) {
         'card_prints.*',
         'card_sets.name as set_name',
         'card_sets.code as set_code',
-        'card_sets.release_date as set_release_date'
+        'card_sets.release_date as set_release_date',
+        'card_sets.de_prefix as set_de_prefix'
       )
       .orderBy('card_sets.release_date');
 
@@ -222,7 +223,8 @@ export async function cardRoutes(app: FastifyInstance) {
         'cards.image_path',
         'card_sets.name as set_name',
         'card_sets.code as set_code',
-        'card_sets.release_date as set_release_date'
+        'card_sets.release_date as set_release_date',
+        'card_sets.de_prefix as set_de_prefix'
       )
       .orderBy('cards.name')
       .limit(20);
