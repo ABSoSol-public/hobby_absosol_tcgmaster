@@ -67,6 +67,7 @@ export interface Print {
   ownedQuantity?: number;
   collectionItems?: CollectionItem[];
   marketplace_url?: string | null;
+  flavor_name?: string | null;
 }
 
 export interface CardDetail extends Card {
@@ -125,6 +126,7 @@ export interface CollectionItem {
   rarity?: string | null;
   market_price?: string | null;
   currency?: string;
+  flavor_name?: string | null;
   set_name?: string;
   set_code?: string;
   game_code?: string;

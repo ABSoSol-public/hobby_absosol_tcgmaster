@@ -84,6 +84,7 @@ export async function collectionRoutes(app: FastifyInstance) {
       'card_prints.rarity',
       'card_prints.market_price',
       'card_prints.currency',
+      'card_prints.flavor_name',
       'card_sets.name as set_name',
       'card_sets.code as set_code',
       'games.code as game_code'

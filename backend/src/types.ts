@@ -44,6 +44,7 @@ export interface CardPrint {
   market_price: string | null;
   currency: string;
   marketplace_url: string | null;
+  flavor_name: string | null;
 }
 
 export interface CollectionItem {

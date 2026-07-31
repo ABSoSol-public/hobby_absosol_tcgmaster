@@ -47,6 +47,7 @@ interface ScryfallCard {
   card_faces?: { oracle_text?: string; image_uris?: ScryfallImageUris }[];
   prices?: { eur?: string | null; usd?: string | null };
   games?: string[];
+  flavor_name?: string | null;
 }
 
 interface BulkDataEntry {
@@ -120,7 +121,14 @@ export const magicImporter: GameImporter = {
       game_data: string;
     }
     const cardByOracle = new Map<string, CardContent>();
-    const printTuples: { oracleId: string; setCode: string; collectorNumber: string | null; rarity: string | null; price: number | null }[] = [];
+    const printTuples: {
+      oracleId: string;
+      setCode: string;
+      collectorNumber: string | null;
+      rarity: string | null;
+      price: number | null;
+      flavorName: string | null;
+    }[] = [];
 
     // Datei ist gzip-komprimiert und JSONL (ein JSON-Objekt pro Zeile) —
     // Node dekomprimiert nicht automatisch, da der Server keinen
@@ -161,6 +169,7 @@ export const magicImporter: GameImporter = {
         collectorNumber: c.collector_number || null,
         rarity: c.rarity || null,
         price: eur && eur > 0 ? eur : null,
+        flavorName: c.flavor_name || null,
       });
     }
     onProgress(`Bulk-Datei fertig: ${cardByOracle.size} Karten, ${printTuples.length} Papier-Prints.`);
@@ -226,7 +235,13 @@ export const magicImporter: GameImporter = {
           rarity_code: p.rarity ? p.rarity[0].toUpperCase() : null,
           market_price: p.price,
           currency: 'EUR',
-          content_hash: hashOf({ rarity_code: p.rarity ? p.rarity[0].toUpperCase() : null, market_price: p.price, currency: 'EUR' }),
+          flavor_name: p.flavorName,
+          content_hash: hashOf({
+            rarity_code: p.rarity ? p.rarity[0].toUpperCase() : null,
+            market_price: p.price,
+            currency: 'EUR',
+            flavor_name: p.flavorName,
+          }),
         },
       });
     }
@@ -238,7 +253,7 @@ export const magicImporter: GameImporter = {
       await db('card_prints')
         .insert(chunk)
         .onConflict(['card_id', 'set_id', 'collector_number', 'rarity'])
-        .merge(['rarity_code', 'market_price', 'currency', 'content_hash']);
+        .merge(['rarity_code', 'market_price', 'currency', 'flavor_name', 'content_hash']);
       done += chunk.length;
       if (done % 20000 < 500) onProgress(`Prints aktualisiert: ${done}/${changedPrintRows.length}`);
     }

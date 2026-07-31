@@ -153,7 +153,10 @@ export default function CardDetailPage() {
                   return (
                     <Fragment key={p.id}>
                       <tr>
-                        <td><Link to={`/sets/${p.set_id}`}>{p.set_name}</Link></td>
+                        <td>
+                          <Link to={`/sets/${p.set_id}`}>{p.set_name}</Link>
+                          {p.flavor_name && <div className="muted" style={{ fontSize: '0.85em' }}>{t('print_flavor_name_hint')}: „{p.flavor_name}“</div>}
+                        </td>
                         <td>
                           {p.collector_number}
                           {deHint && (

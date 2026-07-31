@@ -75,6 +75,7 @@ erDiagram
         decimal market_price
         string currency "EUR|USD, siehe Preise-Abschnitt unten"
         string marketplace_url "Cardmarket-Direktlink, wo verfügbar"
+        string flavor_name "aufgedruckter Name, falls abweichend (aktuell nur Magic)"
         string content_hash "Fingerabdruck für Delta-Import"
     }
     collection_items {
@@ -214,6 +215,10 @@ Je Spiel unterschiedlich befüllt, Frontend zeigt in allen Fällen automatisch `
 **`marketplace_url`**: fertiger Direktlink zur Cardmarket-Produktseite, wo die Quelle einen liefert (Lorcana zusätzlich über `lorcanajson.org`s `externalLinks.cardmarketUrl`, sonst/als Fallback über dieselbe `dotgg.gg`-API wie die Preise). Frontend zeigt bei vorhandenem Link ein „↗"-Icon neben dem Preis.
 
 `dotgg.gg` (Base-URL `api.dotgg.gg`, Endpunkt `/cgfw/getcards?game=<spiel>`) ist eine freie, öffentlich dokumentierte REST-API (`dotgg.gg/api/`, kein Key) des `DotGG`-Netzwerks (betreibt u. a. auch Lorcana.gg, „Pokémon TCG Zone", „Yu-Gi-Oh! Zone") — bewusst nur als Zusatzquelle behandelt (best-effort, liefert bei Fehlern eine leere Map statt den Import zu blockieren), da sie „as-is" ohne Uptime-Garantie dokumentiert ist.
+
+## Aufgedruckter Name bei Crossover-Sets (`card_prints.flavor_name`, seit 2026-07-31)
+
+Magic-Crossover-Sets („Universes Beyond", z. B. „Final Fantasy: Through the Ages", Warhammer 40.000, Herr der Ringe, Marvel, Secret Lair) drucken auf der physischen Karte teils einen themenpassenden Namen statt des echten Regeltext-Kartennamens (Scryfall-Feld `flavor_name`) — z. B. trägt die physische Karte „The Cloudsea Djinn" (Final Fantasy: Through the Ages, #16) in Wahrheit den Regeltext von „Nyxbloom Ancient". Gefunden, weil genau dieser Fall im Katalog nicht auffindbar war: Import kannte bisher nur `cards.name`. Bewusst am **Print** (nicht an der Karte) gespeichert, da derselbe echte Kartenname je nach Print einen anderen oder gar keinen Flavor-Namen tragen kann. Nur der Magic-Importer befüllt das Feld bisher (`backend/src/services/importers/magic.ts`); Kartensuche (`GET /games/:code/cards?search=`) und die Print-Tabellen im Frontend (Set-/Kartendetailseite, Sammlung) berücksichtigen es zusätzlich zum echten Namen.
 
 ## Zustands-Skala (`collection_items.condition`)
 

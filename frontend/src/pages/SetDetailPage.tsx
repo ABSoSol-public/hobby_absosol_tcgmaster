@@ -88,7 +88,10 @@ export default function SetDetailPage() {
                   <Link to={`/cards/${p.card_id}`} state={navState}><CardImage className="thumb" src={p.image_small_url} alt="" /></Link>
                 </td>
                 <td>{p.collector_number}</td>
-                <td><Link to={`/cards/${p.card_id}`} state={navState}>{printName(p, lang)}</Link></td>
+                <td>
+                  <Link to={`/cards/${p.card_id}`} state={navState}>{printName(p, lang)}</Link>
+                  {p.flavor_name && <div className="muted" style={{ fontSize: '0.85em' }}>{t('print_flavor_name_hint')}: „{p.flavor_name}“</div>}
+                </td>
                 <td>{p.rarity}</td>
                 <td>
                   {euro(p.market_price, p.currency)}

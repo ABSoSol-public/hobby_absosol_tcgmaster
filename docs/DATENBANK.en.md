@@ -75,6 +75,7 @@ erDiagram
         decimal market_price
         string currency "EUR|USD, see pricing section below"
         string marketplace_url "Cardmarket direct link, where available"
+        string flavor_name "printed name, if it differs (currently Magic only)"
         string content_hash "fingerprint for delta import"
     }
     collection_items {
@@ -214,6 +215,10 @@ Populated differently per game; the frontend always automatically displays `name
 **`marketplace_url`**: a ready-made direct link to the Cardmarket product page, where the source provides one (Lorcana additionally via lorcanajson.org's `externalLinks.cardmarketUrl`, otherwise/as fallback via the same `dotgg.gg` API as the prices). The frontend shows a "↗" icon next to the price when a link is present.
 
 `dotgg.gg` (base URL `api.dotgg.gg`, endpoint `/cgfw/getcards?game=<game>`) is a free, publicly documented REST API (`dotgg.gg/api/`, no key) of the `DotGG` network (which also runs, among others, Lorcana.gg, "Pokémon TCG Zone", "Yu-Gi-Oh! Zone") — deliberately treated only as a supplementary source (best-effort, returns an empty map on errors instead of blocking the import), since it is documented "as-is" without an uptime guarantee.
+
+## Printed name on crossover sets (`card_prints.flavor_name`, since 2026-07-31)
+
+Magic crossover sets ("Universes Beyond", e.g. "Final Fantasy: Through the Ages", Warhammer 40,000, Lord of the Rings, Marvel, Secret Lair) sometimes print a theme-appropriate name on the physical card instead of the actual rules-text card name (Scryfall field `flavor_name`) — e.g. the physical card "The Cloudsea Djinn" (Final Fantasy: Through the Ages, #16) actually carries the rules text of "Nyxbloom Ancient". Found because exactly this case wasn't findable in the catalog: the import only knew `cards.name`. Deliberately stored on the **print** (not the card), since the same real card name can carry a different or no flavor name depending on the print. Only the Magic importer populates this field so far (`backend/src/services/importers/magic.ts`); card search (`GET /games/:code/cards?search=`) and the print tables in the frontend (set/card detail page, collection) take it into account alongside the real name.
 
 ## Condition scale (`collection_items.condition`)
 

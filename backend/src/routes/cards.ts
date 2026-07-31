@@ -46,6 +46,13 @@ export async function cardRoutes(app: FastifyInstance) {
                 .where((pb) => {
                   for (const pattern of numberPatterns) pb.orWhere('card_prints.collector_number', 'like', pattern);
                 });
+            })
+            // Manche Prints (v. a. Magic-Crossover-Sets wie "Final Fantasy: Through
+            // the Ages") tragen auf der physischen Karte einen anderen Namen als den
+            // eigentlichen Kartennamen (card_prints.flavor_name) — sonst über den
+            // aufgedruckten Namen nicht auffindbar.
+            .orWhereIn('cards.id', (sub) => {
+              sub.select('card_prints.card_id').from('card_prints').where('card_prints.flavor_name', 'like', `%${search}%`);
             });
         });
       }

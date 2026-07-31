@@ -188,7 +188,10 @@ export default function CollectionPage() {
                   <td>
                     <Link to={`/cards/${it.card_id}`} state={navState}><CardImage className="thumb" src={it.image_small_url} alt="" /></Link>
                   </td>
-                  <td><Link to={`/cards/${it.card_id}`} state={navState}>{itemName(it, lang)}</Link></td>
+                  <td>
+                    <Link to={`/cards/${it.card_id}`} state={navState}>{itemName(it, lang)}</Link>
+                    {it.flavor_name && <div className="muted" style={{ fontSize: '0.85em' }}>{t('print_flavor_name_hint')}: „{it.flavor_name}“</div>}
+                  </td>
                   <td>{it.set_code} <span className="muted">{it.collector_number}</span></td>
                   <td>{it.condition} <span className="muted">({CONDITION_LABELS[it.condition]})</span></td>
                   <td>{it.language}</td>
