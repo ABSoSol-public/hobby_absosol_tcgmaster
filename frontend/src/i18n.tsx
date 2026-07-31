@@ -71,6 +71,7 @@ const dict = {
   dash_stat_distinct_prints: { de: 'Verschiedene Prints', en: 'Distinct prints' },
   dash_stat_market_value: { de: 'Marktwert (ca.)', en: 'Market value (approx.)' },
   dash_stat_purchase_value: { de: 'Kaufwert', en: 'Purchase value' },
+  dash_stat_hypothetical_value: { de: 'Hypothetischer Wert (min. 1 € je Karte)', en: 'Hypothetical value (min. €1 per card)' },
   dash_catalog_heading: { de: 'Kartenkatalog', en: 'Card catalog' },
   dash_catalog_summary: { de: 'Karten im Katalog.', en: 'cards in catalog.' },
   dash_catalog_browse: { de: 'Zum Karten-Browser →', en: 'Go to card browser →' },

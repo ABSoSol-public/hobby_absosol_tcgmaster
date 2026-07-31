@@ -114,6 +114,7 @@ export default function Dashboard() {
           <div className="stat-tile"><div className="value">{stats.distinctPrints.toLocaleString(locale)}</div><div className="label">{t('dash_stat_distinct_prints')}</div></div>
           <div className="stat-tile"><div className="value">{euro(stats.marketValue)}</div><div className="label">{t('dash_stat_market_value')}</div></div>
           <div className="stat-tile"><div className="value">{euro(stats.purchaseValue)}</div><div className="label">{t('dash_stat_purchase_value')}</div></div>
+          <div className="stat-tile"><div className="value">{euro(stats.hypotheticalValue)}</div><div className="label">{t('dash_stat_hypothetical_value')}</div></div>
         </div>
       )}
 

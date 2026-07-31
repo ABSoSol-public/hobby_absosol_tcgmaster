@@ -73,7 +73,7 @@ GET /api/v1/games/magic/cards?color=U&type=Instant
 
 `GET /api/v1/collection` — Query: `game` (game code), `search`, `page`, `limit`.
 
-`GET /api/v1/collection/stats` — Query optional: `game`. Returns `totalCopies`, `distinctCards`, `distinctPrints`, `purchaseValue`, `marketValue`. `marketValue` is always in EUR — prints with `currency: 'USD'` (currently only Yu-Gi-Oh!) are converted using the current exchange rate before summation (`services/exchangeRate.ts`), otherwise the sum would simply add up USD and EUR amounts. `sort=value` on `GET /collection` performs the same conversion.
+`GET /api/v1/collection/stats` — Query optional: `game`. Returns `totalCopies`, `distinctCards`, `distinctPrints`, `purchaseValue`, `marketValue`, `hypotheticalValue`. `marketValue` is always in EUR — prints with `currency: 'USD'` (currently only Yu-Gi-Oh!) are converted using the current exchange rate before summation (`services/exchangeRate.ts`), otherwise the sum would simply add up USD and EUR amounts. `sort=value` on `GET /collection` performs the same conversion. `hypotheticalValue` is a purely informational variant of the same sum where every print counts as at least €1 (`GREATEST(price, 1)` per copy) — cards worth €1 or more count at their real (converted) price; `card_prints.market_price` itself is left untouched.
 
 `POST /api/v1/collection` — add a print to the collection (increases the quantity if the same print in the same condition/language/edition already exists).
 

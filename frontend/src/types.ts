@@ -136,6 +136,7 @@ export interface CollectionStats {
   distinctPrints: number;
   purchaseValue: number;
   marketValue: number;
+  hypotheticalValue: number;
 }
 
 /** Navigationskontext, der beim Öffnen einer Karte per location.state mitgegeben wird. */

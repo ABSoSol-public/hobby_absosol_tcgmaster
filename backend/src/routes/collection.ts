@@ -147,6 +147,17 @@ export async function collectionRoutes(app: FastifyInstance) {
           "collection_items.quantity * COALESCE(card_prints.market_price, 0) * IF(card_prints.currency = 'USD', ?, 1)",
           [usdToEur]
         ) as never,
+      })
+      // hypotheticalValue: rein informativer "was-wäre-wenn"-Wert (keine
+      // Änderung an card_prints.market_price!) — Karten unter 1 € fließen mit
+      // einem Mindestpreis von 1 € ein (z. B. Bulk-Karten, die einzeln kaum
+      // real verkauft werden, in Sammlungen aber meist trotzdem mit ca. 1 €
+      // gehandelt/eingeschätzt werden), Karten ab 1 € mit ihrem echten Preis.
+      .sum({
+        hypotheticalValue: db.raw(
+          "collection_items.quantity * GREATEST(COALESCE(card_prints.market_price, 0) * IF(card_prints.currency = 'USD', ?, 1), 1)",
+          [usdToEur]
+        ) as never,
       });
 
     return {
@@ -156,6 +167,7 @@ export async function collectionRoutes(app: FastifyInstance) {
         distinctPrints: Number(totals.distinctPrints || 0),
         purchaseValue: Number(totals.purchaseValue || 0),
         marketValue: Number(totals.marketValue || 0),
+        hypotheticalValue: Number(totals.hypotheticalValue || 0),
       },
     };
   });
