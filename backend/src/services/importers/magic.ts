@@ -1,19 +1,19 @@
-import { Duplex, Readable } from 'stream';
+import { createGunzip } from 'zlib';
+import { createInterface } from 'readline';
+import { Readable } from 'stream';
 import { db } from '../../db';
 import { GameImporter, ImportOptions, ImportStats } from './types';
 import { chunked, fetchJson, hashOf, recordPriceHistory } from './util';
 
 // Datenquelle: Scryfall. Die Bulk-Datei "default_cards" (jede Papier-Ausgabe
-// jeder Karte, ~450 MB JSON) wird STREAMEND geparst, damit der Speicherbedarf
-// auf der Synology begrenzt bleibt — es landen nur reduzierte Zeilen im RAM.
+// jeder Karte) wird STREAMEND geparst, damit der Speicherbedarf auf der
+// Synology begrenzt bleibt — es landen nur reduzierte Zeilen im RAM.
+// Scryfall liefert sie als gzip-komprimierte JSONL-Datei (ein JSON-Objekt pro
+// Zeile) unter `jsonl_download_uri` — das früher genutzte, unkomprimierte
+// JSON-Array unter `download_uri` gibt es seit einem API-Umbau nicht mehr
+// (Stand 2026-07-31, live gegen die echte Scryfall-API geprüft: das Feld
+// fehlt seither komplett in der `/bulk-data`-Antwort).
 const API_BASE = 'https://api.scryfall.com';
-
-// stream-json v3 wird zur Laufzeit über seine Exports-Map aufgelöst, die die
-// klassische TS-Modulauflösung ("moduleResolution": "node") nicht kennt — daher require.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { streamArray } = require('stream-json/streamers/stream-array.js') as {
-  streamArray: { withParserAsStream: () => Duplex };
-};
 
 interface ScryfallSet {
   code: string;
@@ -52,7 +52,7 @@ interface ScryfallCard {
 interface BulkDataEntry {
   type: string;
   updated_at: string;
-  download_uri: string;
+  jsonl_download_uri: string;
 }
 
 export const magicImporter: GameImporter = {
@@ -106,8 +106,9 @@ export const magicImporter: GameImporter = {
 
     // 2) Bulk-Datei streamen und auf reduzierte Zeilen eindampfen.
     //    Logische Karte = Oracle-ID (Regeltext-Identität), Print = konkrete Ausgabe.
-    onProgress(`Lade und streame Bulk-Datei (${entry.download_uri.split('/').pop()}, das dauert einige Minuten) …`);
-    const res = await fetch(entry.download_uri, { headers: { 'User-Agent': 'tcg-collection-manager' } });
+    if (!entry.jsonl_download_uri) throw new Error('Scryfall-Bulk-Eintrag "default_cards" hat keine jsonl_download_uri.');
+    onProgress(`Lade und streame Bulk-Datei (${entry.jsonl_download_uri.split('/').pop()}, das dauert einige Minuten) …`);
+    const res = await fetch(entry.jsonl_download_uri, { headers: { 'User-Agent': 'tcg-collection-manager' } });
     if (!res.ok || !res.body) throw new Error(`Scryfall-Bulk-Download fehlgeschlagen: ${res.status}`);
 
     interface CardContent {
@@ -121,12 +122,15 @@ export const magicImporter: GameImporter = {
     const cardByOracle = new Map<string, CardContent>();
     const printTuples: { oracleId: string; setCode: string; collectorNumber: string | null; rarity: string | null; price: number | null }[] = [];
 
-    const stream = streamArray.withParserAsStream();
-    Readable.fromWeb(res.body as never).pipe(stream);
-    const pipeline = stream as unknown as AsyncIterable<{ value: ScryfallCard }>;
+    // Datei ist gzip-komprimiert und JSONL (ein JSON-Objekt pro Zeile) —
+    // Node dekomprimiert nicht automatisch, da der Server keinen
+    // Content-Encoding-Header setzt (`.gz` ist der eigentliche Dateiinhalt).
+    const lines = createInterface({ input: Readable.fromWeb(res.body as never).pipe(createGunzip()), crlfDelay: Infinity });
 
     let seen = 0;
-    for await (const { value: c } of pipeline) {
+    for await (const line of lines) {
+      if (!line) continue;
+      const c = JSON.parse(line) as ScryfallCard;
       seen++;
       if (seen % 50000 === 0) onProgress(`Bulk-Datei: ${seen} Einträge verarbeitet …`);
       if (!c.oracle_id) continue;
