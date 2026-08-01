@@ -111,19 +111,17 @@ export async function setRoutes(app: FastifyInstance) {
     );
 
     // Wert der besessenen Prints dieses Sets — echt und hypothetisch (Karten
-    // mit bekanntem Preis unter 1 € auf 1 € angehoben, Karten OHNE Preisdaten
-    // bleiben unbewertet — gleiche Regel wie services/valuation.ts, hier in
-    // JS statt SQL, da market_price/currency schon aus `prints` vorliegen und
-    // sich so eine weitere DB-Abfrage spart). USD (Yu-Gi-Oh!) wird in EUR
-    // umgerechnet.
+    // ohne Preis ODER mit Preis unter 1 € auf 1 € angehoben, gleiche Regel
+    // wie services/valuation.ts, hier in JS statt SQL, da market_price/
+    // currency schon aus `prints` vorliegen und sich so eine weitere DB-
+    // Abfrage spart). USD (Yu-Gi-Oh!) wird in EUR umgerechnet.
     const usdToEur = await getUsdToEurRate();
     let ownedMarketValue = 0;
     let ownedHypotheticalValue = 0;
     for (const p of prints as { id: number; market_price: string | null; currency: string }[]) {
       const qty = ownedBy[p.id] || 0;
       if (!qty) continue;
-      if (p.market_price == null) continue; // kein Preis bekannt -> weder echter noch hypothetischer Wert
-      const priceEur = Number(p.market_price) * (p.currency === 'USD' ? usdToEur : 1);
+      const priceEur = (Number(p.market_price) || 0) * (p.currency === 'USD' ? usdToEur : 1);
       ownedMarketValue += qty * priceEur;
       ownedHypotheticalValue += qty * Math.max(priceEur, 1);
     }

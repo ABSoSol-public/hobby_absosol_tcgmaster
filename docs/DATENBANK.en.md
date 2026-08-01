@@ -194,7 +194,8 @@ Populated differently per game; the frontend always automatically displays `name
 - **Yu-Gi-Oh!**: In addition to the English catalog, the importer also loads the German catalog from YGOPRODeck (`cardinfo.php?language=de`, primary source). Not every card has a German TCG release there (as of the first import: 11,769 of 14,472 cards) — in that case both fields initially stay `null`. For exactly these gaps, `--force` runs additionally query **Yugipedia** as a secondary source (`backend/src/services/importers/yugipedia.ts`) — see its own section below.
 - **Disney Lorcana**: lorcanajson.org delivers DE and EN together in one go, no gaps expected.
 - **Riftbound**: The API (riftcodex.com) only delivers English — a custom translation file `backend/src/data/riftbound.de.json` (989 cards translated by Claude, **not** the official Riot localizations). Icon placeholders and keywords in square brackets (`[Deflect]` etc.) remain untranslated.
-- **Magic, Pokémon**: no German text — for Magic this would require Scryfall's significantly larger `all_cards` bulk file (2.5 GB instead of 557 MB); for Pokémon the source fundamentally only delivers English.
+- **Magic**: populated as of 2026-08-01. The importer now streams Scryfall's `all_cards` bulk file instead of the smaller `default_cards` (372 vs. 74 MB compressed) — only `all_cards` includes the German paper printings (`lang: "de"`, fields `printed_name`/`printed_text`, per face in `card_faces[]` for multi-faced cards). German rows only contribute the translation (`deByOracle` map in `backend/src/services/importers/magic.ts`), not a separate print — the physical print already exists via the English row. Not every card has a German paper release (digital-only/very new cards) — then both fields stay `null`.
+- **Pokémon**: no German text — the source (pokemontcg.io) fundamentally only delivers English.
 
 ## Prices, currency, and marketplace links (`card_prints.market_price`/`currency`/`marketplace_url`)
 

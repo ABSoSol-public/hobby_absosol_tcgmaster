@@ -5,14 +5,23 @@ import { db } from '../../db';
 import { GameImporter, ImportOptions, ImportStats } from './types';
 import { chunked, fetchJson, hashOf, recordPriceHistory } from './util';
 
-// Datenquelle: Scryfall. Die Bulk-Datei "default_cards" (jede Papier-Ausgabe
-// jeder Karte) wird STREAMEND geparst, damit der Speicherbedarf auf der
-// Synology begrenzt bleibt — es landen nur reduzierte Zeilen im RAM.
-// Scryfall liefert sie als gzip-komprimierte JSONL-Datei (ein JSON-Objekt pro
-// Zeile) unter `jsonl_download_uri` — das früher genutzte, unkomprimierte
-// JSON-Array unter `download_uri` gibt es seit einem API-Umbau nicht mehr
-// (Stand 2026-07-31, live gegen die echte Scryfall-API geprüft: das Feld
-// fehlt seither komplett in der `/bulk-data`-Antwort).
+// Datenquelle: Scryfall. Die Bulk-Datei "all_cards" (jede Ausgabe jeder Karte
+// in JEDER Sprache — nicht nur Englisch wie bei "default_cards", s. u.) wird
+// STREAMEND geparst, damit der Speicherbedarf auf der Synology begrenzt
+// bleibt — es landen nur reduzierte Zeilen im RAM. Scryfall liefert sie als
+// gzip-komprimierte JSONL-Datei (ein JSON-Objekt pro Zeile) unter
+// `jsonl_download_uri` — das früher genutzte, unkomprimierte JSON-Array unter
+// `download_uri` gibt es seit einem API-Umbau nicht mehr (Stand 2026-07-31,
+// live gegen die echte Scryfall-API geprüft: das Feld fehlt seither komplett
+// in der `/bulk-data`-Antwort).
+//
+// "all_cards" statt des kleineren "default_cards" (372 MB statt 74 MB
+// komprimiert, Stand 2026-08-01), weil nur "all_cards" auch die deutschen
+// Papier-Ausgaben enthält (`lang: "de"`, Felder `printed_name`/`printed_text`)
+// — "default_cards" bevorzugt pro Karte+Set nur eine (meist englische)
+// Sprache. Deutsche Zeilen werden nur für `name_de`/`card_text_de`
+// ausgewertet, nicht als eigene Prints übernommen (derselbe physische Print
+// existiert ja bereits über die englische Zeile).
 const API_BASE = 'https://api.scryfall.com';
 
 interface ScryfallSet {
@@ -44,10 +53,14 @@ interface ScryfallCard {
   colors?: string[];
   color_identity?: string[];
   image_uris?: ScryfallImageUris;
-  card_faces?: { oracle_text?: string; image_uris?: ScryfallImageUris }[];
+  card_faces?: { oracle_text?: string; image_uris?: ScryfallImageUris; printed_name?: string | null; printed_text?: string | null }[];
   prices?: { eur?: string | null; usd?: string | null };
   games?: string[];
   flavor_name?: string | null;
+  // Nur bei lang != "en" gesetzt (übersetzter Name/Text der Druckausgabe;
+  // bei mehrseitigen Karten stattdessen auf card_faces[]).
+  printed_name?: string | null;
+  printed_text?: string | null;
 }
 
 interface BulkDataEntry {
@@ -65,8 +78,8 @@ export const magicImporter: GameImporter = {
 
     // Bulk-Data-Katalog abfragen: liefert Download-URL + Stand der Daten
     const bulk = await fetchJson<{ data: BulkDataEntry[] }>(`${API_BASE}/bulk-data`);
-    const entry = bulk.data.find((b) => b.type === 'default_cards');
-    if (!entry) throw new Error('Scryfall-Bulk-Eintrag "default_cards" nicht gefunden.');
+    const entry = bulk.data.find((b) => b.type === 'all_cards');
+    if (!entry) throw new Error('Scryfall-Bulk-Eintrag "all_cards" nicht gefunden.');
 
     const remoteVersion = entry.updated_at;
     if (!options.force && remoteVersion) {
@@ -107,7 +120,7 @@ export const magicImporter: GameImporter = {
 
     // 2) Bulk-Datei streamen und auf reduzierte Zeilen eindampfen.
     //    Logische Karte = Oracle-ID (Regeltext-Identität), Print = konkrete Ausgabe.
-    if (!entry.jsonl_download_uri) throw new Error('Scryfall-Bulk-Eintrag "default_cards" hat keine jsonl_download_uri.');
+    if (!entry.jsonl_download_uri) throw new Error('Scryfall-Bulk-Eintrag "all_cards" hat keine jsonl_download_uri.');
     onProgress(`Lade und streame Bulk-Datei (${entry.jsonl_download_uri.split('/').pop()}, das dauert einige Minuten) …`);
     const res = await fetch(entry.jsonl_download_uri, { headers: { 'User-Agent': 'tcg-collection-manager' } });
     if (!res.ok || !res.body) throw new Error(`Scryfall-Bulk-Download fehlgeschlagen: ${res.status}`);
@@ -121,6 +134,7 @@ export const magicImporter: GameImporter = {
       game_data: string;
     }
     const cardByOracle = new Map<string, CardContent>();
+    const deByOracle = new Map<string, { name: string | null; text: string | null }>();
     const printTuples: {
       oracleId: string;
       setCode: string;
@@ -143,7 +157,16 @@ export const magicImporter: GameImporter = {
       if (seen % 50000 === 0) onProgress(`Bulk-Datei: ${seen} Einträge verarbeitet …`);
       if (!c.oracle_id) continue;
       if (c.games && !c.games.includes('paper')) continue; // nur physisch erhältliche Prints
-      if (c.lang && c.lang !== 'en') continue;
+      if (c.lang !== 'en' && c.lang !== 'de') continue; // andere Sprachen tragen aktuell keine Übersetzung bei
+
+      if (c.lang === 'de') {
+        if (!deByOracle.has(c.oracle_id)) {
+          const name = c.printed_name || (c.card_faces || []).map((f) => f.printed_name).filter(Boolean).join(' // ') || null;
+          const text = c.printed_text || (c.card_faces || []).map((f) => f.printed_text).filter(Boolean).join('\n//\n') || null;
+          if (name || text) deByOracle.set(c.oracle_id, { name, text });
+        }
+        continue; // deutsche Zeile trägt nur zur Übersetzung bei, nicht zu Prints (derselbe physische Print existiert schon über die englische Zeile)
+      }
 
       if (!cardByOracle.has(c.oracle_id)) {
         const faceImages = c.image_uris || c.card_faces?.[0]?.image_uris;
@@ -172,7 +195,7 @@ export const magicImporter: GameImporter = {
         flavorName: c.flavor_name || null,
       });
     }
-    onProgress(`Bulk-Datei fertig: ${cardByOracle.size} Karten, ${printTuples.length} Papier-Prints.`);
+    onProgress(`Bulk-Datei fertig: ${cardByOracle.size} Karten, ${printTuples.length} Papier-Prints, ${deByOracle.size} deutsche Übersetzungen.`);
 
     // 3) Karten-Delta schreiben
     const existingCardHashes = new Map(
@@ -182,7 +205,8 @@ export const magicImporter: GameImporter = {
       ])
     );
     const cardRowsAll = [...cardByOracle.entries()].map(([oracleId, content]) => {
-      const full = { ...content, name_de: null as string | null, card_text_de: null as string | null };
+      const de = deByOracle.get(oracleId);
+      const full = { ...content, name_de: de?.name ?? null, card_text_de: de?.text ?? null };
       const contentHash = hashOf(full);
       return { externalId: oracleId, contentHash, row: { game_id: game.id, external_id: oracleId, ...full, content_hash: contentHash } };
     });
