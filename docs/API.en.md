@@ -65,9 +65,9 @@ GET /api/v1/games/magic/cards?color=U&type=Instant
 
 ## Sets
 
-`GET /api/v1/games/:code/sets` — all sets of a game including progress (`printCount`, `ownedPrintCount`). Query: `search`.
+`GET /api/v1/games/:code/sets` — all sets of a game including progress (`printCount`, `ownedPrintCount`) and the value of owned prints (`ownedMarketValue`, `ownedHypotheticalValue` — same formula as `GET /collection/stats` → `hypotheticalValue`, see there). Query: `search`.
 
-`GET /api/v1/sets/:id` — a single set with all prints (`prints[]`), including card name, image, and `ownedQuantity`.
+`GET /api/v1/sets/:id` — a single set with all prints (`prints[]`), including card name, image, and `ownedQuantity`; the set itself additionally carries `ownedMarketValue`/`ownedHypotheticalValue` as above.
 
 ## Collection
 
@@ -75,7 +75,7 @@ GET /api/v1/games/magic/cards?color=U&type=Instant
 
 `GET /api/v1/collection/sets` — Query optional: `game`. Returns the sets (`id`, `code`, `name`, `game_code`, `game_name`) that actually have at least one collection item — backs the collection list's set filter (`set` query parameter above), usable across all games.
 
-`GET /api/v1/collection/stats` — Query optional: `game`. Returns `totalCopies`, `distinctCards`, `distinctPrints`, `purchaseValue`, `marketValue`, `hypotheticalValue`. `marketValue` is always in EUR — prints with `currency: 'USD'` (currently only Yu-Gi-Oh!) are converted using the current exchange rate before summation (`services/exchangeRate.ts`), otherwise the sum would simply add up USD and EUR amounts. `sort=value` on `GET /collection` performs the same conversion. `hypotheticalValue` is a purely informational variant of the same sum where every print counts as at least €1 (`GREATEST(price, 1)` per copy) — cards worth €1 or more count at their real (converted) price; `card_prints.market_price` itself is left untouched.
+`GET /api/v1/collection/stats` — Query optional: `game`. Returns `totalCopies`, `distinctCards`, `distinctPrints`, `purchaseValue`, `marketValue`, `hypotheticalValue`. `marketValue` is always in EUR — prints with `currency: 'USD'` (currently only Yu-Gi-Oh!) are converted using the current exchange rate before summation (`services/exchangeRate.ts`), otherwise the sum would simply add up USD and EUR amounts. `sort=value` on `GET /collection` performs the same conversion. `hypotheticalValue` is a purely informational variant of the same sum where every print with a **known** price under €1 counts as at least €1 (`GREATEST(price, 1)` per copy) — cards worth €1 or more count at their real (converted) price, cards **without** price data (`market_price IS NULL`) stay unvalued (0), exactly like `marketValue` (see `services/valuation.ts`); `card_prints.market_price` itself is left untouched. The same formula also backs `ownedMarketValue`/`ownedHypotheticalValue` on `GET /games/:code/sets` and `GET /sets/:id`.
 
 `POST /api/v1/collection` — add a print to the collection (increases the quantity if the same print in the same condition/language/edition already exists).
 

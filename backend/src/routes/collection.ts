@@ -3,6 +3,7 @@ import { db } from '../db';
 import { compareCollectorNumbers } from '../services/cardNumbers';
 import { getUsdToEurRate } from '../services/exchangeRate';
 import { withLocalImages } from '../services/images';
+import { hypotheticalValueSql, marketValueSql } from '../services/valuation';
 
 const CONDITIONS = ['MT', 'NM', 'EX', 'GD', 'LP', 'PL', 'PO'];
 
@@ -175,28 +176,22 @@ export async function collectionRoutes(app: FastifyInstance) {
     // USD-Anteil vorher in EUR umgerechnet werden, sonst wird schlicht addiert,
     // als wären 1 USD und 1 EUR derselbe Wert (s. services/exchangeRate.ts).
     const usdToEur = await getUsdToEurRate();
+    const marketValueExpr = marketValueSql(usdToEur);
+    const hypotheticalValueExpr = hypotheticalValueSql(usdToEur);
     const [totals] = await base()
       .sum({ totalCopies: 'collection_items.quantity' })
       .countDistinct({ distinctCards: 'cards.id' })
       .countDistinct({ distinctPrints: 'card_prints.id' })
       .sum({ purchaseValue: db.raw('collection_items.quantity * COALESCE(collection_items.purchase_price, 0)') as never })
-      .sum({
-        marketValue: db.raw(
-          "collection_items.quantity * COALESCE(card_prints.market_price, 0) * IF(card_prints.currency = 'USD', ?, 1)",
-          [usdToEur]
-        ) as never,
-      })
+      .sum({ marketValue: db.raw(marketValueExpr.sql, marketValueExpr.bindings) as never })
       // hypotheticalValue: rein informativer "was-wäre-wenn"-Wert (keine
-      // Änderung an card_prints.market_price!) — Karten unter 1 € fließen mit
-      // einem Mindestpreis von 1 € ein (z. B. Bulk-Karten, die einzeln kaum
-      // real verkauft werden, in Sammlungen aber meist trotzdem mit ca. 1 €
-      // gehandelt/eingeschätzt werden), Karten ab 1 € mit ihrem echten Preis.
-      .sum({
-        hypotheticalValue: db.raw(
-          "collection_items.quantity * GREATEST(COALESCE(card_prints.market_price, 0) * IF(card_prints.currency = 'USD', ?, 1), 1)",
-          [usdToEur]
-        ) as never,
-      });
+      // Änderung an card_prints.market_price!) — Karten mit BEKANNTEM Preis
+      // unter 1 € fließen mit einem Mindestpreis von 1 € ein (z. B. Bulk-
+      // Karten, die einzeln kaum real verkauft werden, in Sammlungen aber
+      // meist trotzdem mit ca. 1 € gehandelt/eingeschätzt werden), Karten ab
+      // 1 € mit ihrem echten Preis. Karten OHNE Preisdaten bleiben unbewertet
+      // (0) — s. services/valuation.ts.
+      .sum({ hypotheticalValue: db.raw(hypotheticalValueExpr.sql, hypotheticalValueExpr.bindings) as never });
 
     return {
       data: {
