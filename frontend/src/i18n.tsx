@@ -192,6 +192,7 @@ const dict = {
   sets_date_unknown: { de: 'Datum unbekannt', en: 'Date unknown' },
   sets_prints: { de: 'Prints', en: 'prints' },
   sets_collected: { de: 'gesammelt', en: 'collected' },
+  sets_total_copies: { de: 'Karten insgesamt', en: 'cards total' },
   sets_owned_value: { de: 'Wert:', en: 'value:' },
   sets_owned_value_hypothetical: { de: 'hypothetisch', en: 'hypothetical' },
   sets_filter_all: { de: 'Alle Sets', en: 'All sets' },

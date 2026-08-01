@@ -99,6 +99,7 @@ export default function SetDetailPage() {
   if (!set) return <div className="empty">{t('sets_loading')}</div>;
 
   const owned = set.prints.filter((p) => (p.ownedQuantity || 0) > 0).length;
+  const totalCopies = set.prints.reduce((sum, p) => sum + (p.ownedQuantity || 0), 0);
   const pct = set.prints.length ? Math.round((owned / set.prints.length) * 100) : 0;
 
   let visiblePrints = onlyMissing ? set.prints.filter((p) => !(p.ownedQuantity || 0)) : set.prints;
@@ -119,7 +120,7 @@ export default function SetDetailPage() {
       <h1>{set.name} <span className="muted">({set.code})</span></h1>
       <p className="muted" style={{ marginBottom: 8 }}>
         {set.release_date ? `${t('set_released_on')} ${new Date(set.release_date).toLocaleDateString(locale)}` : t('set_release_unknown')} ·{' '}
-        {set.prints.length} {t('sets_prints')} · {owned} {t('sets_collected')} ({pct} %) ·{' '}
+        {set.prints.length} {t('sets_prints')} · {owned} {t('sets_collected')} ({pct} %) · {totalCopies} {t('sets_total_copies')} ·{' '}
         {t('sets_owned_value')} {euroNum(set.ownedMarketValue)} ({t('sets_owned_value_hypothetical')} {euroNum(set.ownedHypotheticalValue)})
       </p>
       <div className="progress" style={{ maxWidth: 420, marginBottom: 12 }}>
