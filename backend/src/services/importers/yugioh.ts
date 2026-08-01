@@ -1,7 +1,7 @@
 import { db } from '../../db';
 import { GameImporter, ImportOptions, ImportStats } from './types';
-import { CHUNK, chunked, fetchJson, hashOf, recordPriceHistory } from './util';
-import { fetchYugipediaCardTranslation, fetchYugipediaSetDePrefix, mapWithConcurrency } from './yugipedia';
+import { CHUNK, chunked, fetchJson, hashOf, mapWithConcurrency, recordPriceHistory } from './util';
+import { fetchYugipediaCardTranslation, fetchYugipediaSetDePrefix } from './yugipedia';
 
 const API_BASE = 'https://db.ygoprodeck.com/api/v7';
 

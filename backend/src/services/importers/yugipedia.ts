@@ -97,22 +97,3 @@ export async function fetchYugipediaSetDePrefix(englishSetName: string): Promise
   if (!wikitext) return null;
   return extractField(wikitext, 'de_prefix');
 }
-
-/** Führt `fn` über `items` mit maximal `limit` gleichzeitigen Aufrufen aus. */
-export async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    for (;;) {
-      const i = next++;
-      if (i >= items.length) return;
-      results[i] = await fn(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}

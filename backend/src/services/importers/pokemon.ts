@@ -1,7 +1,8 @@
 import { config } from '../../config';
 import { db } from '../../db';
+import { fetchTcgdexCardTranslation, fetchTcgdexGermanIds } from './tcgdex';
 import { GameImporter, ImportOptions, ImportStats } from './types';
-import { chunked, hashOf, recordPriceHistory } from './util';
+import { chunked, hashOf, mapWithConcurrency, recordPriceHistory } from './util';
 
 // Datenquelle: pokemontcg.io v2. Funktioniert ohne API-Key (streng ratenlimitiert);
 // mit kostenlosem Key (POKEMON_TCG_API_KEY in .env) deutlich schneller.
@@ -74,7 +75,7 @@ async function fetchAll<T>(path: string, onProgress: (msg: string) => void, labe
 export const pokemonImporter: GameImporter = {
   gameCode: 'pokemon',
 
-  async run(onProgress = () => {}, _options: ImportOptions = {}): Promise<ImportStats> {
+  async run(onProgress = () => {}, options: ImportOptions = {}): Promise<ImportStats> {
     const game = await db('games').where({ code: 'pokemon' }).first();
     if (!game) throw new Error('Spiel "pokemon" fehlt in der games-Tabelle (Migration ausführen).');
     if (!config.pokemonApiKey) {
@@ -114,18 +115,51 @@ export const pokemonImporter: GameImporter = {
       ])
     );
 
+    // Sekundärquelle TCGdex (tcgdex.dev): pokemontcg.io (Primärquelle) liefert
+    // grundsätzlich nur Englisch. Bereits vorhandene Übersetzungen zuerst aus
+    // der DB übernehmen (nie überschreiben, nie unnötig neu abfragen), dann
+    // bei --force die noch fehlenden ergänzen — sonst würde jeder tägliche
+    // Delta-Import erneut Tausende Einzel-Requests gegen TCGdex auslösen.
+    const deByExternalId = new Map<string, { name: string; text: string | null }>(
+      (await db('cards').where('game_id', game.id).whereNotNull('name_de').select('external_id', 'name_de', 'card_text_de')).map(
+        (r) => [r.external_id, { name: r.name_de as string, text: r.card_text_de as string | null }]
+      )
+    );
+    if (options.force) {
+      onProgress('Sekundärquelle TCGdex: lade deutschen Karten-Index …');
+      const deIds = await fetchTcgdexGermanIds();
+      const missingIds = cards.map((c) => c.id).filter((id) => deIds.has(id) && !deByExternalId.has(id));
+      onProgress(`TCGdex: prüfe ${missingIds.length} Karten ohne deutsche Übersetzung …`);
+      let checked = 0;
+      const results = await mapWithConcurrency(missingIds, 10, async (id) => {
+        const t = await fetchTcgdexCardTranslation(id);
+        checked++;
+        if (checked % 500 === 0) onProgress(`TCGdex Übersetzungen: ${checked}/${missingIds.length} geprüft …`);
+        return { id, t };
+      });
+      let found = 0;
+      for (const r of results) {
+        if (r.t) {
+          deByExternalId.set(r.id, r.t);
+          found++;
+        }
+      }
+      onProgress(`TCGdex: ${found} deutsche Übersetzungen gefunden und ergänzt.`);
+    }
+
     const cardRowsAll = cards.map((c) => {
       const textParts = [
         ...(c.rules || []),
         ...(c.attacks || []).map((a) => `${a.name}${a.damage ? ` (${a.damage})` : ''}${a.text ? `: ${a.text}` : ''}`),
         c.flavorText || '',
       ].filter(Boolean);
+      const de = deByExternalId.get(c.id);
       const content = {
         name: c.name,
-        name_de: null as string | null, // Quelle liefert nur Englisch
+        name_de: de?.name ?? null,
         card_type: c.supertype || null,
         card_text: textParts.join('\n') || null,
-        card_text_de: null as string | null,
+        card_text_de: de?.text ?? null,
         image_url: c.images?.large || null,
         image_small_url: c.images?.small || null,
         game_data: JSON.stringify({

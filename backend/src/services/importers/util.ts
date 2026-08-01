@@ -16,6 +16,30 @@ export function chunked<T>(arr: T[], size: number = CHUNK): T[][] {
   return out;
 }
 
+/**
+ * Führt `fn` über `items` mit maximal `limit` gleichzeitigen Aufrufen aus —
+ * für Sekundärquellen, die (anders als die primären Bulk-Dateien) pro Karte
+ * einen eigenen Request brauchen (Yugipedia, TCGdex), damit nicht Tausende
+ * Requests unkontrolliert parallel gegen eine fremde API laufen.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 /** Stabiler Fingerabdruck eines Inhalts — dient nur dem Vergleich, nicht der Kryptografie. */
 export function hashOf(value: unknown): string {
   return createHash('md5').update(JSON.stringify(value)).digest('hex');
