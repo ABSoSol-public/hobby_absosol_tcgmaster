@@ -13,6 +13,45 @@ function printName(p: { card_name?: string; card_name_de?: string | null }, lang
   return lang === 'de' ? p.card_name_de || p.card_name || '' : p.card_name || p.card_name_de || '';
 }
 
+type SortKey = 'number' | 'card' | 'rarity' | 'price' | 'owned';
+
+function SortableHeader({
+  label,
+  sortKey,
+  activeKey,
+  dir,
+  onClick,
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeKey: SortKey | null;
+  dir: 'asc' | 'desc';
+  onClick: (key: SortKey) => void;
+}) {
+  const active = activeKey === sortKey;
+  return (
+    <th className="sortable" onClick={() => onClick(sortKey)} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      {label}
+      <span className="sort-arrow">{active ? (dir === 'asc' ? '▲' : '▼') : ''}</span>
+    </th>
+  );
+}
+
+function comparePrints(a: Print, b: Print, key: SortKey, lang: string): number {
+  switch (key) {
+    case 'number':
+      return (a.collector_number || '').localeCompare(b.collector_number || '', undefined, { numeric: true, sensitivity: 'base' });
+    case 'card':
+      return printName(a, lang).localeCompare(printName(b, lang), undefined, { sensitivity: 'base' });
+    case 'rarity':
+      return (a.rarity || '').localeCompare(b.rarity || '', undefined, { sensitivity: 'base' });
+    case 'price':
+      return (Number(a.market_price) || 0) - (Number(b.market_price) || 0);
+    case 'owned':
+      return (a.ownedQuantity || 0) - (b.ownedQuantity || 0);
+  }
+}
+
 export default function SetDetailPage() {
   const { id } = useParams();
   const { canEdit } = useAuth();
@@ -23,6 +62,16 @@ export default function SetDetailPage() {
   const [removePrint, setRemovePrint] = useState<Print | null>(null);
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [busyPrintId, setBusyPrintId] = useState<number | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
 
   async function quickAdjust(printId: number, action: 'add' | 'remove') {
     setBusyPrintId(printId);
@@ -52,7 +101,10 @@ export default function SetDetailPage() {
   const owned = set.prints.filter((p) => (p.ownedQuantity || 0) > 0).length;
   const pct = set.prints.length ? Math.round((owned / set.prints.length) * 100) : 0;
 
-  const visiblePrints = onlyMissing ? set.prints.filter((p) => !(p.ownedQuantity || 0)) : set.prints;
+  let visiblePrints = onlyMissing ? set.prints.filter((p) => !(p.ownedQuantity || 0)) : set.prints;
+  if (sortKey) {
+    visiblePrints = [...visiblePrints].sort((a, b) => comparePrints(a, b, sortKey, lang) * (sortDir === 'asc' ? 1 : -1));
+  }
   // Navigationskontext für die Kartendetailseite: Zurück-Ziel + Blätter-Reihenfolge
   const navState: CardNavState = {
     back: { path: `/sets/${set.id}`, name: set.name },
@@ -82,7 +134,15 @@ export default function SetDetailPage() {
       <div className="table-wrap panel" style={{ padding: 0 }}>
         <table>
           <thead>
-            <tr><th></th><th>{t('col_number')}</th><th>{t('col_card')}</th><th>{t('col_rarity')}</th><th>{t('col_price')}</th><th>{t('col_owned')}</th><th></th></tr>
+            <tr>
+              <th></th>
+              <SortableHeader label={t('col_number')} sortKey="number" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+              <SortableHeader label={t('col_card')} sortKey="card" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+              <SortableHeader label={t('col_rarity')} sortKey="rarity" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+              <SortableHeader label={t('col_price')} sortKey="price" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+              <SortableHeader label={t('col_owned')} sortKey="owned" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+              <th></th>
+            </tr>
           </thead>
           <tbody>
             {visiblePrints.map((p) => {

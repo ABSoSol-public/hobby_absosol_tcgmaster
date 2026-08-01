@@ -131,6 +131,9 @@ input, select { font: inherit; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
 th { color: var(--text-dim); font-weight: 600; font-size: 13px; }
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--text); }
+th.sortable .sort-arrow { display: inline-block; margin-left: 4px; opacity: 0.6; }
 tr:hover td { background: var(--bg-hover); }
 td img.thumb { width: 36px; border-radius: 3px; display: block; }
 @media (max-width: 600px) { table { font-size: 13px; } th, td { padding: 7px 8px; } }
