@@ -8,6 +8,7 @@ import { CardSet } from '../types';
 export default function SetsPage() {
   const { t, locale } = useLanguage();
   const { game } = useGame();
+  const euro = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: 'EUR' });
   const [sets, setSets] = useState<CardSet[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -47,7 +48,8 @@ export default function SetsPage() {
                   <strong>{s.name}</strong> <span className="muted">({s.code})</span>
                   <div className="meta">
                     {s.release_date ? new Date(s.release_date).toLocaleDateString(locale) : t('sets_date_unknown')} ·{' '}
-                    {s.printCount} {t('sets_prints')} · {s.ownedPrintCount} {t('sets_collected')} ({pct} %)
+                    {s.printCount} {t('sets_prints')} · {s.ownedPrintCount} {t('sets_collected')} ({pct} %) ·{' '}
+                    {t('sets_owned_value')} {euro(s.ownedMarketValue)} ({t('sets_owned_value_hypothetical')} {euro(s.ownedHypotheticalValue)})
                   </div>
                   <div className="progress" style={{ marginTop: 6 }}>
                     <div style={{ width: `${pct}%` }} />

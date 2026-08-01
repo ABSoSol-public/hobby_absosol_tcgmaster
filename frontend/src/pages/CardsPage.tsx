@@ -61,6 +61,7 @@ export default function CardsPage() {
         ...filterParams,
         page: get('page') || 1,
         limit: 60,
+        lang,
       })
       .then((r) => {
         setCards(r.data);
@@ -69,7 +70,7 @@ export default function CardsPage() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [params, game, filters]);
+  }, [params, game, filters, lang]);
 
   return (
     <>

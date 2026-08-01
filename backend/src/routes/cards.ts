@@ -12,6 +12,7 @@ interface CardListQuery {
   page?: string;
   limit?: string;
   sort?: 'name' | 'newest';
+  lang?: string;
   // Spielspezifische Filter (siehe services/gameConfig.ts) kommen als
   // zusätzliche Query-Parameter, z. B. ?attribute=DARK oder ?color=W.
   [key: string]: string | undefined;
@@ -83,7 +84,11 @@ export async function cardRoutes(app: FastifyInstance) {
 
       const [{ total }] = (await query.clone().clearSelect().count({ total: '*' })) as { total: number }[];
 
+      // Bei deutscher UI-Sprache zeigt das Frontend name_de || name an
+      // (s. cardName() in i18n.tsx) — sortiert werden muss nach demselben
+      // angezeigten Wert, sonst passt die Reihenfolge nicht zur Beschriftung.
       if (req.query.sort === 'newest') query.orderBy('cards.id', 'desc');
+      else if (req.query.lang === 'de') query.orderByRaw('COALESCE(cards.name_de, cards.name) asc');
       else query.orderBy('cards.name');
 
       const rows = await query

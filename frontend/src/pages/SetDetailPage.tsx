@@ -38,6 +38,7 @@ export default function SetDetailPage() {
 
   const euro = (v: string | null | undefined, currency = 'EUR') =>
     v ? Number(v).toLocaleString(locale, { style: 'currency', currency }) : '—';
+  const euroNum = (v: number) => v.toLocaleString(locale, { style: 'currency', currency: 'EUR' });
 
   const load = useCallback(() => {
     api.set(id!).then((r) => setSet(r.data)).catch((err) => setError(err.message));
@@ -66,7 +67,8 @@ export default function SetDetailPage() {
       <h1>{set.name} <span className="muted">({set.code})</span></h1>
       <p className="muted" style={{ marginBottom: 8 }}>
         {set.release_date ? `${t('set_released_on')} ${new Date(set.release_date).toLocaleDateString(locale)}` : t('set_release_unknown')} ·{' '}
-        {set.prints.length} {t('sets_prints')} · {owned} {t('sets_collected')} ({pct} %)
+        {set.prints.length} {t('sets_prints')} · {owned} {t('sets_collected')} ({pct} %) ·{' '}
+        {t('sets_owned_value')} {euroNum(set.ownedMarketValue)} ({t('sets_owned_value_hypothetical')} {euroNum(set.ownedHypotheticalValue)})
       </p>
       <div className="progress" style={{ maxWidth: 420, marginBottom: 12 }}>
         <div style={{ width: `${pct}%` }} />

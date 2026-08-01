@@ -47,6 +47,7 @@ export async function collectionRoutes(app: FastifyInstance) {
       language?: string;
       first_edition?: string;
       set?: string;
+      lang?: string;
     };
   }>('/collection', async (req) => {
     const page = Math.max(1, Number(req.query.page || 1));
@@ -97,7 +98,16 @@ export async function collectionRoutes(app: FastifyInstance) {
         query2.orderBy('collection_items.updated_at', 'asc');
         break;
       case 'name':
-        query2.orderBy('cards.name', 'asc');
+        // Bei deutscher UI-Sprache zeigt das Frontend name_de || name an
+        // (s. itemName() in CollectionPage.tsx) — sortiert werden muss nach
+        // demselben angezeigten Wert, sonst passt die Reihenfolge nicht zur
+        // sichtbaren Beschriftung (Karten ohne name_de fallen sonst an eine
+        // andere Stelle, als ihr angezeigter englischer Name vermuten lässt).
+        if (req.query.lang === 'de') {
+          query2.orderByRaw('COALESCE(cards.name_de, cards.name) asc');
+        } else {
+          query2.orderBy('cards.name', 'asc');
+        }
         break;
       case 'quantity':
         query2.orderBy('collection_items.quantity', 'desc');

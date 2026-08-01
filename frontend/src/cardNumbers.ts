@@ -18,10 +18,26 @@ export function deVariantHint(
   dePrefix?: string | null
 ): string | null {
   if (!collectorNumber || !hasGermanRelease) return null;
-  const m = collectorNumber.match(/^([A-Z0-9]{2,6})-([A-Z]{1,3})(\d{1,4}[A-Z]?)$/i);
-  if (!m) return null;
-  const [, setCode, lang, number] = m;
-  if (lang.toUpperCase() === 'DE') return null;
-  const prefix = dePrefix || `${setCode}-DE`;
-  return `${prefix}${number}`;
+
+  // Übliches Format mit Sprachkürzel, z. B. "LOB-EN001".
+  const withLang = collectorNumber.match(/^([A-Z0-9]{2,6})-([A-Z]{1,3})(\d{1,4}[A-Z]?)$/i);
+  if (withLang) {
+    const [, setCode, lang, number] = withLang;
+    if (lang.toUpperCase() === 'DE') return null;
+    const prefix = dePrefix || `${setCode}-DE`;
+    return `${prefix}${number}`;
+  }
+
+  // Frühe Sets (2002–2004, z. B. "LON-000") führen in der Quelle GAR KEIN
+  // Sprachkürzel — genau das Zeitfenster, in dem die deutsche Ausgabe real
+  // "-G" statt "-DE" nutzt (s. card_sets.de_prefix). Ohne bekannten Präfix
+  // lässt sich hier nichts Verlässliches ableiten (kein blindes "-DE"-Raten
+  // für ein Format, das nicht mal für Englisch ein Kürzel hat) — dann bleibt
+  // der Hinweis bewusst weg statt zu raten.
+  const bare = collectorNumber.match(/^([A-Z0-9]{2,6})-(\d{1,4}[A-Z]?)$/i);
+  if (bare && dePrefix) {
+    const [, , number] = bare;
+    return `${dePrefix}${number}`;
+  }
+  return null;
 }

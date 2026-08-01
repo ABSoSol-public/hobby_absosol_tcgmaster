@@ -100,6 +100,8 @@ export interface CardSet {
   de_prefix: string | null;
   printCount: number;
   ownedPrintCount: number;
+  ownedMarketValue: number;
+  ownedHypotheticalValue: number;
 }
 
 export interface SetDetail extends Omit<CardSet, 'printCount' | 'ownedPrintCount'> {

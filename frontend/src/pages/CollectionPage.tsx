@@ -64,13 +64,14 @@ export default function CollectionPage() {
         condition: get('condition') || undefined,
         language: get('language') || undefined,
         first_edition: get('first_edition') || undefined,
+        lang,
       })
       .then((r) => { setItems(r.data); setPagination(r.pagination); setError(null); })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }
 
-  useEffect(load, [params]);
+  useEffect(load, [params, lang]);
 
   // Set-Filter-Optionen: nur Sets, die tatsächlich in der Sammlung vorkommen —
   // bei aktivem Spiel-Filter auf dessen Sets eingeschränkt, sonst spielübergreifend.
