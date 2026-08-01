@@ -35,10 +35,6 @@ export async function buildApp() {
   // und statische Kartenbilder aus, keine HTML-Seiten mit Skripten/Styles.
   await app.register(fastifyHelmet, { contentSecurityPolicy: false });
 
-  // Globales Rate-Limiting als Grundschutz gegen Abuse/DoS; die Login-Route
-  // bekommt zusätzlich ihr eigenes, deutlich strengeres Limit (siehe routes/auth.ts).
-  await app.register(fastifyRateLimit, { max: 300, timeWindow: '1 minute' });
-
   await app.register(cors, { origin: config.corsOrigins });
 
   await app.register(fastifyCookie);
@@ -89,6 +85,18 @@ export async function buildApp() {
 
   await app.register(
     async (v1) => {
+      // Rate-Limiting als Grundschutz gegen Abuse/DoS — bewusst NUR hier auf
+      // /api/v1 registriert (nicht global auf `app`), damit es NICHT für die
+      // Kartenbilder unter /images/ gilt (oben als Geschwister-Kontext auf
+      // `app` registriert, nicht innerhalb von v1). Bilder sind unkritisch
+      // (kein Login, statisch, 7 Tage Cache) und schon eine einzelne
+      // Set-/Kartenliste kann leicht 100+ Thumbnail-Requests auslösen — mit
+      // dem globalen Limit reichten die dafür regelmäßig aus, um normale
+      // Nutzung mit 429 auszubremsen (Nutzerfeedback 2026-08-01). Die
+      // Login-Route bekommt zusätzlich ihr eigenes, deutlich strengeres
+      // Limit (siehe routes/auth.ts).
+      await v1.register(fastifyRateLimit, { max: 300, timeWindow: '1 minute' });
+
       // Login/Logout/Session-Check laufen ohne Auth-Zwang (sonst käme man nie hinein).
       await v1.register(authRoutes);
 
