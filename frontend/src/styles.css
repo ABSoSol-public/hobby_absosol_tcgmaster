@@ -323,3 +323,13 @@ td img.thumb { width: 36px; border-radius: 3px; display: block; }
 .empty { text-align: center; color: var(--text-dim); padding: 48px 0; }
 .badge-1st { color: var(--accent); font-size: 12px; font-weight: 700; }
 .badge-viewer { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* Banliste */
+.banlist-count { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 13px; font-weight: 700; vertical-align: middle; }
+.banlist-forbidden { background: rgba(224, 92, 92, 0.16); color: var(--red); }
+.banlist-limited { background: rgba(232, 179, 57, 0.16); color: var(--accent); }
+.banlist-semi { background: rgba(76, 175, 125, 0.16); color: var(--green); }
+.banlist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }
+.banlist-card { display: flex; flex-direction: column; gap: 6px; text-decoration: none; color: var(--text); font-size: 13px; text-align: center; }
+.banlist-card:hover span { color: var(--accent); }
+.banlist-card img.thumb { width: 100%; height: auto; border-radius: 6px; }

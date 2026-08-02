@@ -1,6 +1,7 @@
 // Zentraler API-Client — die einzige Stelle im Frontend, die HTTP spricht.
 import type {
   AuthUser,
+  Banlist,
   Card,
   CardDetail,
   CardSet,
@@ -70,6 +71,7 @@ export const api = {
     request<ListResponse<Card>>(`/games/${game}/cards${qs(params)}`),
   card: (id: number | string) => request<{ data: CardDetail }>(`/cards/${id}`),
   filters: (game: string) => request<{ data: Filters }>(`/games/${game}/filters`),
+  banlist: (game: string) => request<{ data: Banlist }>(`/games/${game}/banlist`),
   scanCard: (game: string, text: string) => request<{ data: Print[] }>(`/games/${game}/scan${qs({ text })}`),
 
   sets: (game: string, search?: string) => request<{ data: CardSet[] }>(`/games/${game}/sets${qs({ search })}`),

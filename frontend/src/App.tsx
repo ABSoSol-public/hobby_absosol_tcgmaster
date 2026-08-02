@@ -8,6 +8,7 @@ import SetDetailPage from './pages/SetDetailPage';
 import CollectionPage from './pages/CollectionPage';
 import DecksPage from './pages/DecksPage';
 import DeckBuilderPage from './pages/DeckBuilderPage';
+import BanlistPage from './pages/BanlistPage';
 import GlossaryPage from './pages/GlossaryPage';
 import { useAuth } from './auth';
 import { useGame } from './game';
@@ -33,6 +34,7 @@ export default function App() {
             <NavLink to="/cards">{t('nav_cards')}</NavLink>
             <NavLink to="/sets">{t('nav_sets')}</NavLink>
             <NavLink to="/decks">{t('nav_decks')}</NavLink>
+            <NavLink to="/banlist">{t('nav_banlist')}</NavLink>
             <NavLink to="/collection">{t('nav_collection')}</NavLink>
             <NavLink to="/glossary">{t('nav_glossary')}</NavLink>
           </nav>
@@ -64,6 +66,7 @@ export default function App() {
           <Route path="/sets/:id" element={<SetDetailPage />} />
           <Route path="/decks" element={<DecksPage />} />
           <Route path="/decks/:id" element={<DeckBuilderPage />} />
+          <Route path="/banlist" element={<BanlistPage />} />
           <Route path="/collection" element={<CollectionPage />} />
           <Route path="/glossary" element={<GlossaryPage />} />
         </Routes>

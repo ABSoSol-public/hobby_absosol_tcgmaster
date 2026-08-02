@@ -19,6 +19,7 @@ const dict = {
   nav_sets: { de: 'Sets', en: 'Sets' },
   nav_collection: { de: 'Sammlung', en: 'Collection' },
   nav_decks: { de: 'Decks', en: 'Decks' },
+  nav_banlist: { de: 'Banliste', en: 'Banlist' },
   nav_glossary: { de: 'Glossar', en: 'Glossary' },
 
   glossary_heading: { de: 'Glossar', en: 'Glossary' },
@@ -64,6 +65,21 @@ const dict = {
   deck_stat_monsters: { de: 'Monster', en: 'Monsters' },
   deck_stat_spells: { de: 'Zauber', en: 'Spells' },
   deck_stat_traps: { de: 'Fallen', en: 'Traps' },
+
+  banlist_title: { de: 'Banliste', en: 'Banlist' },
+  banlist_intro: {
+    de: 'Aktueller Banlist-Status (TCG) — wird automatisch beim täglichen Katalog-Abgleich mitgezogen, sobald Konami die Liste ändert.',
+    en: 'Current banlist status (TCG) — updates automatically with the daily catalog sync whenever Konami changes the list.',
+  },
+  banlist_checked_at: { de: 'zuletzt geprüft:', en: 'last checked:' },
+  banlist_not_supported: {
+    de: 'Für dieses Spiel wird aktuell keine Banliste gepflegt.',
+    en: 'No banlist is currently maintained for this game.',
+  },
+  banlist_empty: { de: 'Keine gesperrten oder limitierten Karten bekannt.', en: 'No banned or limited cards known.' },
+  banlist_forbidden: { de: 'Verboten', en: 'Forbidden' },
+  banlist_limited: { de: 'Limitiert (1)', en: 'Limited (1)' },
+  banlist_semi_limited: { de: 'Semi-limitiert (2)', en: 'Semi-Limited (2)' },
 
   dash_title: { de: 'Übersicht', en: 'Dashboard' },
   dash_stat_copies: { de: 'Karten in der Sammlung', en: 'Cards in collection' },

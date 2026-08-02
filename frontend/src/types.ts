@@ -47,6 +47,23 @@ export interface Card {
   ownedQuantity?: number;
 }
 
+export interface BanlistCard {
+  id: number;
+  name: string;
+  name_de: string | null;
+  card_type: string | null;
+  image_small_url: string | null;
+  image_url: string | null;
+}
+
+export interface Banlist {
+  supported: boolean;
+  checkedAt: string | null;
+  forbidden: BanlistCard[];
+  limited: BanlistCard[];
+  semiLimited: BanlistCard[];
+}
+
 export interface Print {
   id: number;
   card_id: number;

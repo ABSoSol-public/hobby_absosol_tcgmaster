@@ -119,6 +119,54 @@ export async function cardRoutes(app: FastifyInstance) {
     }
   );
 
+  // Banliste (aktuell nur Yu-Gi-Oh!/TCG gepflegt, s. game_data.banTcg aus dem
+  // YGOPRODeck-Import). Zieht bei Statusänderungen automatisch über den
+  // bestehenden Delta-Import nach (banTcg fließt in den content_hash der
+  // Karte ein) — kein separater Aktualisierungsmechanismus nötig. Andere
+  // Spiele liefern `supported: false`, damit das Frontend klar zwischen
+  // "keine gesperrten Karten" und "wird für dieses Spiel gar nicht geführt"
+  // unterscheiden kann.
+  app.get<{ Params: { code: string } }>('/games/:code/banlist', async (req, reply) => {
+    const game = await db('games').where({ code: req.params.code }).first();
+    if (!game) return reply.code(404).send({ error: { message: 'Spiel nicht gefunden', statusCode: 404 } });
+
+    if (game.code !== 'yugioh') {
+      return { data: { supported: false, checkedAt: null, forbidden: [], limited: [], semiLimited: [] } };
+    }
+
+    const rows = await db('cards')
+      .where('game_id', game.id)
+      .whereRaw("JSON_UNQUOTE(JSON_EXTRACT(game_data, '$.banTcg')) IS NOT NULL")
+      .select(
+        'id',
+        'name',
+        'name_de',
+        'card_type',
+        'image_small_path',
+        'image_path',
+        db.raw("JSON_UNQUOTE(JSON_EXTRACT(game_data, '$.banTcg')) as ban_status")
+      )
+      .orderBy('name');
+
+    const withImages = rows.map(withLocalImages) as (Card & { ban_status: string })[];
+    const byStatus = (status: string) => withImages.filter((r) => r.ban_status === status);
+
+    const importState = await db('import_state').where('game_id', game.id).first();
+
+    return {
+      data: {
+        supported: true,
+        // Zeitpunkt des letzten Abgleichs mit YGOPRODeck — nicht dasselbe wie
+        // "letzte tatsächliche Änderung"; zeigt aber verlässlich, wie aktuell
+        // unser Datenstand gegenüber der Quelle ist (zum Gegenprüfen).
+        checkedAt: importState?.checked_at ?? null,
+        forbidden: byStatus('Forbidden'),
+        limited: byStatus('Limited'),
+        semiLimited: byStatus('Semi-Limited'),
+      },
+    };
+  });
+
   // Verfügbare Filter samt Werten (generisch aus der Spiel-Konfiguration)
   app.get<{ Params: { code: string } }>('/games/:code/filters', async (req, reply) => {
     const game = await db('games').where({ code: req.params.code }).first();
