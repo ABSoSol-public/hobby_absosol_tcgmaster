@@ -9,13 +9,18 @@ import { Banlist, BanlistCard } from '../types';
 function Section({ title, cards, badgeClass }: { title: string; cards: BanlistCard[]; badgeClass: string }) {
   const { lang } = useLanguage();
   if (cards.length === 0) return null;
+  // Sortierung nach dem angezeigten (sprachabhängigen) Namen — der Backend-
+  // Endpoint liefert die Karten immer nach dem englischen Namen sortiert, das
+  // passt bei deutscher UI-Sprache aber nicht zur sichtbaren Beschriftung
+  // (gleiches Problem wie bei Sammlung/Karten-Browser, dort schon behoben).
+  const sorted = [...cards].sort((a, b) => cardName(a, lang).localeCompare(cardName(b, lang), undefined, { sensitivity: 'base' }));
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <h2 style={{ marginTop: 0 }}>
         {title} <span className={`banlist-count ${badgeClass}`}>{cards.length}</span>
       </h2>
       <div className="banlist-grid">
-        {cards.map((c) => (
+        {sorted.map((c) => (
           <Link key={c.id} to={`/cards/${c.id}`} className="banlist-card">
             <CardImage className="thumb" src={c.image_small_url} alt="" />
             <span>{cardName(c, lang)}</span>
