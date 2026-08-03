@@ -1,6 +1,6 @@
 import { config } from '../../config';
 import { db } from '../../db';
-import { fetchTcgdexCardTranslation, fetchTcgdexGermanIds } from './tcgdex';
+import { fetchTcgdexCardTranslation, fetchTcgdexGermanIds, resolveTcgdexId } from './tcgdex';
 import { GameImporter, ImportOptions, ImportStats } from './types';
 import { chunked, hashOf, mapWithConcurrency, recordPriceHistory } from './util';
 
@@ -33,6 +33,19 @@ interface PokemonCard {
   flavorText?: string;
   rules?: string[];
   attacks?: { name: string; cost?: string[]; damage?: string; text?: string }[];
+  /** Nationale Pokédex-Nummer(n) — nur bei Pokémon-Karten gesetzt, nicht bei Trainer/Energie. */
+  nationalPokedexNumbers?: number[];
+}
+
+/** Nur Pokémon-Karten (nicht Trainer/Energie) können eine Pokédex-Nummer haben. */
+function isPokemonSupertype(supertype: string | null | undefined): boolean {
+  return supertype === 'Pokémon';
+}
+
+interface Enrichment {
+  name: string | null;
+  text: string | null;
+  pokedexId: number | null;
 }
 
 /** Fetch mit Retry bei Rate-Limit (429) und Serverfehlern. */
@@ -72,6 +85,77 @@ async function fetchAll<T>(path: string, onProgress: (msg: string) => void, labe
   }
 }
 
+/**
+ * Fallback, wenn pokemontcg.io (Primärquelle) gerade nicht erreichbar ist:
+ * zieht trotzdem fehlende deutsche TCGdex-Übersetzungen für die bereits
+ * vorhandenen Karten nach (Katalog/Sets/Preise bleiben unverändert, dafür
+ * bräuchte es echte frische Daten von pokemontcg.io). Direktes UPDATE statt
+ * über den normalen content_hash-Vergleich — der nächste erfolgreiche
+ * reguläre Import baut den Hash ohnehin aus dem dann aktuellen DB-Stand neu
+ * auf (der die hier ergänzten Übersetzungen korrekt mit einbezieht), daher
+ * ist ein vorübergehend "falscher" Hash für diese Zeilen unschädlich.
+ */
+async function runGermanTranslationFallback(gameId: number, onProgress: (msg: string) => void): Promise<ImportStats> {
+  const [{ setCount }] = (await db('card_sets').where('game_id', gameId).count({ setCount: '*' })) as { setCount: number }[];
+  const existing = await db('cards').where('game_id', gameId).select('id', 'external_id', 'name_de', 'card_type', 'game_data');
+  const needsCheck = existing.filter((c) => !c.name_de || (isPokemonSupertype(c.card_type) && parseGameDataPokedexId(c.game_data) == null));
+  onProgress(`Sekundärquelle TCGdex: ${existing.length} bereits vorhandene Karten, davon ${needsCheck.length} ohne deutsche Übersetzung und/oder Pokédex-Nummer.`);
+
+  const deIds = await fetchTcgdexGermanIds();
+  const missingIds = needsCheck
+    .map((c) => ({ id: c.id, externalId: c.external_id, tcgdexId: resolveTcgdexId(c.external_id, deIds) }))
+    .filter((c): c is { id: number; externalId: string; tcgdexId: string } => c.tcgdexId != null);
+  onProgress(`TCGdex: prüfe ${missingIds.length} Karten …`);
+
+  let checked = 0;
+  const results = await mapWithConcurrency(missingIds, 10, async ({ id, externalId, tcgdexId }) => {
+    const t = await fetchTcgdexCardTranslation(tcgdexId);
+    checked++;
+    if (checked % 500 === 0) onProgress(`TCGdex: ${checked}/${missingIds.length} geprüft …`);
+    return { id, externalId, t };
+  });
+
+  let found = 0;
+  for (const r of results) {
+    if (!r.t) continue;
+    const row = existing.find((e) => e.id === r.id)!;
+    const patch: Record<string, unknown> = { updated_at: db.fn.now() };
+    if (!row.name_de) {
+      patch.name_de = r.t.name;
+      patch.card_text_de = r.t.text;
+    }
+    if (r.t.pokedexId != null && isPokemonSupertype(row.card_type) && parseGameDataPokedexId(row.game_data) == null) {
+      patch.game_data = JSON.stringify({ ...parseGameData(row.game_data), pokedexId: r.t.pokedexId });
+    }
+    await db('cards').where({ id: r.id }).update(patch);
+    found++;
+  }
+  onProgress(`TCGdex: ${found} Karten ergänzt (Katalog/Preise unverändert, da pokemontcg.io nicht erreichbar war).`);
+
+  return {
+    sets: setCount,
+    cards: existing.length,
+    prints: 0,
+    cardsChanged: found,
+    printsChanged: 0,
+    skipped: false,
+  };
+}
+
+function parseGameData(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function parseGameDataPokedexId(raw: string | null): number | null {
+  const v = parseGameData(raw).pokedexId;
+  return typeof v === 'number' ? v : null;
+}
+
 export const pokemonImporter: GameImporter = {
   gameCode: 'pokemon',
 
@@ -82,31 +166,53 @@ export const pokemonImporter: GameImporter = {
       onProgress('Hinweis: kein POKEMON_TCG_API_KEY gesetzt — Import läuft mit strengem Rate-Limit (deutlich langsamer).');
     }
 
-    // 1) Sets
-    onProgress('Lade Set-Liste von pokemontcg.io …');
-    const sets = await fetchAll<PokemonSet>('/sets', onProgress, 'Sets');
-    const setRows = sets.map((s) => ({
-      game_id: game.id,
-      code: s.id,
-      name: s.name,
-      release_date: s.releaseDate ? s.releaseDate.replace(/\//g, '-') : null,
-      card_count: s.total || null,
-      image_url: s.images?.logo || s.images?.symbol || null,
-    }));
-    for (const chunk of chunked(setRows)) {
-      await db('card_sets')
-        .insert(chunk)
-        .onConflict(['game_id', 'code'])
-        .merge(['name', 'release_date', 'card_count', 'image_url']);
-    }
-    const setIdByCode = new Map(
-      (await db('card_sets').where('game_id', game.id).select('id', 'code')).map((r) => [r.code, r.id])
-    );
-    onProgress(`${setRows.length} Sets übernommen.`);
+    // 1) Sets + 2) Karten — beide Schritte hängen an derselben, Anfang August
+    // 2026 mehrere Tage lang wiederholt instabilen pokemontcg.io-API (HTTP 500
+    // an wechselnden Stellen, teils schon beim allerersten Set-Abruf, auch mit
+    // API-Key). Ohne frische Daten können Preise/Sets/neue Karten nicht
+    // aktualisiert werden — aber die deutschen TCGdex-Übersetzungen (der
+    // eigentlich dringende Teil bei einer Störung) hängen NICHT an frischen
+    // pokemontcg.io-Daten, sondern nur an den external_ids, die wir ohnehin
+    // schon in der DB haben. Bei --force wird deshalb trotzdem versucht,
+    // fehlende Übersetzungen für den bestehenden Bestand nachzuziehen, statt
+    // den ganzen Import ergebnislos abzubrechen.
+    let setRows: { game_id: number; code: string; name: string; release_date: string | null; card_count: number | null; image_url: string | null }[];
+    let setIdByCode: Map<string, number>;
+    let cards: PokemonCard[];
+    try {
+      onProgress('Lade Set-Liste von pokemontcg.io …');
+      const sets = await fetchAll<PokemonSet>('/sets', onProgress, 'Sets');
+      setRows = sets.map((s) => ({
+        game_id: game.id,
+        code: s.id,
+        name: s.name,
+        release_date: s.releaseDate ? s.releaseDate.replace(/\//g, '-') : null,
+        card_count: s.total || null,
+        image_url: s.images?.logo || s.images?.symbol || null,
+      }));
+      for (const chunk of chunked(setRows)) {
+        await db('card_sets')
+          .insert(chunk)
+          .onConflict(['game_id', 'code'])
+          .merge(['name', 'release_date', 'card_count', 'image_url']);
+      }
+      setIdByCode = new Map(
+        (await db('card_sets').where('game_id', game.id).select('id', 'code')).map((r) => [r.code, r.id])
+      );
+      onProgress(`${setRows.length} Sets übernommen.`);
 
-    // 2) Karten (paginiert; das dauert ohne API-Key eine Weile)
-    onProgress('Lade Kartenkatalog (paginiert) …');
-    const cards = await fetchAll<PokemonCard>('/cards', onProgress, 'Karten');
+      onProgress('Lade Kartenkatalog (paginiert) …');
+      cards = await fetchAll<PokemonCard>('/cards', onProgress, 'Karten');
+    } catch (err) {
+      // Bewusst UNABHÄNGIG von --force: das hier ist der Ausfall der
+      // Primärquelle selbst (nicht "nichts geändert"), auch der tägliche
+      // automatische Delta-Lauf (ohne --force) soll die deutschen TCGdex-
+      // Übersetzungen weiter nachziehen, solange pokemontcg.io down ist —
+      // sonst bliebe genau der dringende Teil (deutsche Namen) tagelang
+      // hängen, obwohl TCGdex bereits erreichbar wäre.
+      onProgress(`Warnung: pokemontcg.io nicht ladbar (${(err as Error).message}) — Katalog/Preise bleiben unverändert, versuche trotzdem deutsche TCGdex-Übersetzungen nachzuziehen.`);
+      return runGermanTranslationFallback(game.id, onProgress);
+    }
 
     const existingCardHashes = new Map(
       (await db('cards').where('game_id', game.id).select('external_id', 'content_hash')).map((r) => [
@@ -116,35 +222,50 @@ export const pokemonImporter: GameImporter = {
     );
 
     // Sekundärquelle TCGdex (tcgdex.dev): pokemontcg.io (Primärquelle) liefert
-    // grundsätzlich nur Englisch. Bereits vorhandene Übersetzungen zuerst aus
-    // der DB übernehmen (nie überschreiben, nie unnötig neu abfragen), dann
-    // bei --force die noch fehlenden ergänzen — sonst würde jeder tägliche
+    // grundsätzlich nur Englisch und (Stand jetzt) keine Pokédex-Nummer im
+    // gestreamten Feld, das wir separat parsen — TCGdex liefert beides.
+    // Bereits vorhandene Übersetzungen/Pokédex-Nummern zuerst aus der DB
+    // übernehmen (nie überschreiben, nie unnötig neu abfragen), dann bei
+    // --force die noch fehlenden ergänzen — sonst würde jeder tägliche
     // Delta-Import erneut Tausende Einzel-Requests gegen TCGdex auslösen.
-    const deByExternalId = new Map<string, { name: string; text: string | null }>(
-      (await db('cards').where('game_id', game.id).whereNotNull('name_de').select('external_id', 'name_de', 'card_text_de')).map(
-        (r) => [r.external_id, { name: r.name_de as string, text: r.card_text_de as string | null }]
+    const deByExternalId = new Map<string, Enrichment>(
+      (await db('cards').where('game_id', game.id).select('external_id', 'name_de', 'card_text_de', 'card_type', 'game_data')).map(
+        (r) => [
+          r.external_id,
+          { name: r.name_de, text: r.card_text_de, pokedexId: isPokemonSupertype(r.card_type) ? parseGameDataPokedexId(r.game_data) : null },
+        ]
       )
     );
     if (options.force) {
       onProgress('Sekundärquelle TCGdex: lade deutschen Karten-Index …');
       const deIds = await fetchTcgdexGermanIds();
-      const missingIds = cards.map((c) => c.id).filter((id) => deIds.has(id) && !deByExternalId.has(id));
-      onProgress(`TCGdex: prüfe ${missingIds.length} Karten ohne deutsche Übersetzung …`);
+      const missingIds = cards
+        .filter((c) => {
+          const e = deByExternalId.get(c.id);
+          return !e?.name || (isPokemonSupertype(c.supertype) && e.pokedexId == null);
+        })
+        .map((c) => ({ externalId: c.id, tcgdexId: resolveTcgdexId(c.id, deIds) }))
+        .filter((c): c is { externalId: string; tcgdexId: string } => c.tcgdexId != null);
+      onProgress(`TCGdex: prüfe ${missingIds.length} Karten …`);
       let checked = 0;
-      const results = await mapWithConcurrency(missingIds, 10, async (id) => {
-        const t = await fetchTcgdexCardTranslation(id);
+      const results = await mapWithConcurrency(missingIds, 10, async ({ externalId, tcgdexId }) => {
+        const t = await fetchTcgdexCardTranslation(tcgdexId);
         checked++;
-        if (checked % 500 === 0) onProgress(`TCGdex Übersetzungen: ${checked}/${missingIds.length} geprüft …`);
-        return { id, t };
+        if (checked % 500 === 0) onProgress(`TCGdex: ${checked}/${missingIds.length} geprüft …`);
+        return { externalId, t };
       });
       let found = 0;
       for (const r of results) {
-        if (r.t) {
-          deByExternalId.set(r.id, r.t);
-          found++;
-        }
+        if (!r.t) continue;
+        const prev = deByExternalId.get(r.externalId);
+        deByExternalId.set(r.externalId, {
+          name: prev?.name ?? r.t.name,
+          text: prev?.text ?? r.t.text,
+          pokedexId: prev?.pokedexId ?? r.t.pokedexId,
+        });
+        found++;
       }
-      onProgress(`TCGdex: ${found} deutsche Übersetzungen gefunden und ergänzt.`);
+      onProgress(`TCGdex: ${found} Karten ergänzt.`);
     }
 
     const cardRowsAll = cards.map((c) => {
@@ -167,6 +288,7 @@ export const pokemonImporter: GameImporter = {
           types: c.types?.join('/') ?? null,
           subtypes: c.subtypes?.join('/') ?? null,
           hp: c.hp ? Number(c.hp) || null : null,
+          pokedexId: c.nationalPokedexNumbers?.[0] ?? de?.pokedexId ?? null,
           evolvesFrom: c.evolvesFrom ?? null,
           rarity: c.rarity ?? null,
         }),

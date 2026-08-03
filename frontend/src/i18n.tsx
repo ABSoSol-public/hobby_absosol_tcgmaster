@@ -120,6 +120,8 @@ const dict = {
 
   cards_title: { de: 'Karten', en: 'Cards' },
   cards_search_placeholder: { de: 'Karte suchen (Name, Text, Nummer oder ID) …', en: 'Search cards (name, text, number or ID) …' },
+  cards_sort_name: { de: 'Sortierung: Name', en: 'Sort: name' },
+  cards_sort_pokedex: { de: 'Sortierung: Pokédex-Nr.', en: 'Sort: Pokédex no.' },
 
   // Generische Filter-Labels (Schlüssel kommen aus der Backend-Konfiguration)
   filter_all: { de: 'alle', en: 'all' },

@@ -11,7 +11,7 @@ interface CardListQuery {
   set?: string; // Set-Code
   page?: string;
   limit?: string;
-  sort?: 'name' | 'newest';
+  sort?: 'name' | 'newest' | 'pokedex';
   lang?: string;
   // Spielspezifische Filter (siehe services/gameConfig.ts) kommen als
   // zusätzliche Query-Parameter, z. B. ?attribute=DARK oder ?color=W.
@@ -88,7 +88,15 @@ export async function cardRoutes(app: FastifyInstance) {
       // (s. cardName() in i18n.tsx) — sortiert werden muss nach demselben
       // angezeigten Wert, sonst passt die Reihenfolge nicht zur Beschriftung.
       if (req.query.sort === 'newest') query.orderBy('cards.id', 'desc');
-      else if (req.query.lang === 'de') query.orderByRaw('COALESCE(cards.name_de, cards.name) asc');
+      else if (req.query.sort === 'pokedex') {
+        // Karten ohne Pokédex-Nummer (Trainer/Energie, oder (noch) nicht
+        // ermittelt) ans Ende, unabhängig von der Sortierrichtung. CAST nötig —
+        // JSON_EXTRACT ohne Cast sortiert lexikografisch als Text (1, 10, 100,
+        // 1000, … statt numerisch 1, 2, 3, …), da MariaDB den extrahierten
+        // JSON-Wert in ORDER BY nicht automatisch als Zahl behandelt.
+        query.orderByRaw("JSON_EXTRACT(cards.game_data, '$.pokedexId') IS NULL asc");
+        query.orderByRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(cards.game_data, '$.pokedexId')) AS UNSIGNED) asc");
+      } else if (req.query.lang === 'de') query.orderByRaw('COALESCE(cards.name_de, cards.name) asc');
       else query.orderBy('cards.name');
 
       const rows = await query

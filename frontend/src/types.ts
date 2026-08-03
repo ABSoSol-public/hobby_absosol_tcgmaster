@@ -29,6 +29,8 @@ export interface GameData {
   scale?: number | null;
   /** Banlist-Status TCG (Yu-Gi-Oh!): "Forbidden" | "Limited" | "Semi-Limited", sonst nicht gesetzt. */
   banTcg?: string | null;
+  /** Nationale Pokédex-Nummer (Pokémon), wo bekannt — nicht bei Trainer-/Energie-Karten. */
+  pokedexId?: number | null;
   [key: string]: unknown;
 }
 

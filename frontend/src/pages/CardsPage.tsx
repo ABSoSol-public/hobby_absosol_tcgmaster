@@ -62,6 +62,7 @@ export default function CardsPage() {
         page: get('page') || 1,
         limit: 60,
         lang,
+        sort: get('sort') || undefined,
       })
       .then((r) => {
         setCards(r.data);
@@ -84,6 +85,12 @@ export default function CardsPage() {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
         />
+        {game === 'pokemon' && (
+          <select value={get('sort')} onChange={(e) => setParam('sort', e.target.value)}>
+            <option value="">{t('cards_sort_name')}</option>
+            <option value="pokedex">{t('cards_sort_pokedex')}</option>
+          </select>
+        )}
         {filters?.filters.map((f) => (
           <select key={f.key} value={get(f.key)} onChange={(e) => setParam(f.key, e.target.value)}>
             <option value="">{tf(`filter_${f.key}`)} — {t('filter_all')}</option>
@@ -112,6 +119,7 @@ export default function CardsPage() {
               title={cardName(c, lang)}
             >
               {(c.ownedQuantity || 0) > 0 && <span className="owned-badge">{c.ownedQuantity}×</span>}
+              {c.game_data?.pokedexId != null && <span className="pokedex-badge">#{c.game_data.pokedexId}</span>}
               <CardImage src={c.image_small_url || c.image_url} alt={cardName(c, lang)} />
               <div className="name">{cardName(c, lang)}</div>
             </Link>
