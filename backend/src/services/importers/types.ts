@@ -14,6 +14,12 @@ export interface ImportStats {
   printsChanged: number;
   /** true, wenn der Import komplett übersprungen wurde, weil die Quelle unverändert war. */
   skipped: boolean;
+  /**
+   * Gesetzt, wenn der Lauf nur eingeschränkt erfolgreich war (z. B. Primärquelle
+   * nicht erreichbar, nur Sekundärquelle ausgewertet). Der Job zählt dann weiter
+   * als abgeschlossen, die Meldung weist aber deutlich darauf hin.
+   */
+  warning?: string;
 }
 
 export interface ImportOptions {

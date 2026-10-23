@@ -4,6 +4,8 @@ import { db } from '../db';
 import { verifyPassword } from '../services/auth';
 
 const COOKIE_NAME = 'token';
+// Gültiger bcrypt-Hash (Kostenfaktor 12) eines Zufallswerts — nur Zeit-Angleichung.
+const DUMMY_HASH = '$2b$12$K8ymDssSJOuBf.cigq2pb.JA6cRfrpcu1Mc3BXETBnhaYK.M9joUe';
 const SESSION_SECONDS = 60 * 60 * 24 * 30; // 30 Tage
 
 /**
@@ -25,7 +27,9 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       const user = await db('users').where({ username }).first();
-      const valid = user && (await verifyPassword(password, user.password_hash));
+      // Auch bei unbekanntem Nutzer einen bcrypt-Vergleich ausführen, damit die
+      // Antwortzeit nicht verrät, ob der Benutzername existiert.
+      const valid = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH) && !!user;
       if (!valid) {
         return reply.code(401).send({ error: { message: 'Benutzername oder Passwort falsch', statusCode: 401 } });
       }

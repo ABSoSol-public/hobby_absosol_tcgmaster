@@ -2,6 +2,10 @@ import { FastifyInstance } from 'fastify';
 import { db } from '../db';
 import { importers } from '../services/importers';
 
+// Prozessinterner Schutz gegen zwei gleichzeitige Starts: Prüfung und Insert in
+// import_jobs sind nicht atomar, zwei fast gleichzeitige Klicks kämen sonst beide durch.
+const startingOrRunning = new Set<string>();
+
 /** Führt einen Import als Hintergrund-Job aus und protokolliert ihn in import_jobs. */
 export async function runImportJob(
   gameCode: string,
@@ -10,14 +14,23 @@ export async function runImportJob(
 ): Promise<number> {
   const importer = importers[gameCode];
   if (!importer) throw new Error(`Kein Importer für Spiel "${gameCode}" registriert.`);
+  if (startingOrRunning.has(gameCode)) throw new Error('Es läuft bereits ein Import für dieses Spiel.');
+  startingOrRunning.add(gameCode);
 
-  const game = await db('games').where({ code: gameCode }).first();
-  if (!game) throw new Error(`Spiel "${gameCode}" nicht gefunden.`);
+  let game;
+  let jobId: number;
+  try {
+    game = await db('games').where({ code: gameCode }).first();
+    if (!game) throw new Error(`Spiel "${gameCode}" nicht gefunden.`);
 
-  const running = await db('import_jobs').where({ game_id: game.id, status: 'running' }).first();
-  if (running) throw new Error('Es läuft bereits ein Import für dieses Spiel.');
+    const running = await db('import_jobs').where({ game_id: game.id, status: 'running' }).first();
+    if (running) throw new Error('Es läuft bereits ein Import für dieses Spiel.');
 
-  const [jobId] = await db('import_jobs').insert({ game_id: game.id, status: 'running' });
+    [jobId] = await db('import_jobs').insert({ game_id: game.id, status: 'running' });
+  } catch (err) {
+    startingOrRunning.delete(gameCode);
+    throw err;
+  }
 
   // Bewusst nicht awaiten — der Job läuft im Hintergrund weiter,
   // der Status ist über GET /imports/latest abrufbar.
@@ -30,9 +43,12 @@ export async function runImportJob(
       { force }
     )
     .then(async (stats) => {
-      const message = stats.skipped
-        ? 'Katalog war bereits aktuell — kein Import nötig.'
-        : `Fertig: ${stats.sets} Sets, ${stats.cardsChanged}/${stats.cards} Karten aktualisiert, ${stats.printsChanged}/${stats.prints} Prints aktualisiert`;
+      const message = stats.warning
+        ? `Eingeschränkt: ${stats.warning} (${stats.cardsChanged}/${stats.cards} Karten aktualisiert, ${stats.printsChanged}/${stats.prints} Prints aktualisiert)`
+        : stats.skipped
+          ? 'Katalog war bereits aktuell — kein Import nötig.'
+          : `Fertig: ${stats.sets} Sets, ${stats.cardsChanged}/${stats.cards} Karten aktualisiert, ${stats.printsChanged}/${stats.prints} Prints aktualisiert`;
+      if (stats.warning) log(`[import:${gameCode}] WARNUNG: ${stats.warning}`);
       // Spiel nach dem ersten erfolgreichen Import automatisch aktivieren —
       // bewusst VOR der Statusmeldung, damit niemand "completed" sieht,
       // bevor die Aktivierung geschrieben ist (CLI-Scripts beenden den
@@ -52,7 +68,9 @@ export async function runImportJob(
         finished_at: db.fn.now(),
         message: err.message,
       });
-    });
+    })
+    .finally(() => startingOrRunning.delete(gameCode))
+    .catch(() => {});
 
   return jobId;
 }

@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db';
-import { collectorNumberLikePatterns } from '../services/cardNumbers';
+import { collectorNumberLikePatterns, escapeLike } from '../services/cardNumbers';
 import { filtersFor } from '../services/gameConfig';
 import { withLocalImages } from '../services/images';
 import { PRICE_HISTORY_KEEP, pruneOldPriceHistory } from '../services/importers/util';
@@ -34,11 +34,12 @@ export async function cardRoutes(app: FastifyInstance) {
       const { search, set } = req.query;
       if (search) {
         const numberPatterns = collectorNumberLikePatterns(search);
+        const like = `%${escapeLike(search)}%`;
         query.where((qb) => {
-          qb.where('cards.name', 'like', `%${search}%`)
-            .orWhere('cards.name_de', 'like', `%${search}%`)
-            .orWhere('cards.card_text', 'like', `%${search}%`)
-            .orWhere('cards.card_text_de', 'like', `%${search}%`)
+          qb.where('cards.name', 'like', like)
+            .orWhere('cards.name_de', 'like', like)
+            .orWhere('cards.card_text', 'like', like)
+            .orWhere('cards.card_text_de', 'like', like)
             .orWhere('cards.external_id', search)
             .orWhereIn('cards.id', (sub) => {
               sub
@@ -53,7 +54,7 @@ export async function cardRoutes(app: FastifyInstance) {
             // eigentlichen Kartennamen (card_prints.flavor_name) — sonst über den
             // aufgedruckten Namen nicht auffindbar.
             .orWhereIn('cards.id', (sub) => {
-              sub.select('card_prints.card_id').from('card_prints').where('card_prints.flavor_name', 'like', `%${search}%`);
+              sub.select('card_prints.card_id').from('card_prints').where('card_prints.flavor_name', 'like', like);
             });
         });
       }
@@ -62,12 +63,12 @@ export async function cardRoutes(app: FastifyInstance) {
         const value = req.query[def.key];
         if (!value) continue;
         if (!def.path) {
-          if (def.contains) query.where('cards.card_type', 'like', `%${value}%`);
+          if (def.contains) query.where('cards.card_type', 'like', `%${escapeLike(value)}%`);
           else query.where('cards.card_type', value);
         } else if (def.numeric) {
           query.whereRaw(`JSON_EXTRACT(cards.game_data, '${def.path}') = ?`, [Number(value)]);
         } else if (def.contains) {
-          query.whereRaw(`JSON_UNQUOTE(JSON_EXTRACT(cards.game_data, '${def.path}')) LIKE ?`, [`%${value}%`]);
+          query.whereRaw(`JSON_UNQUOTE(JSON_EXTRACT(cards.game_data, '${def.path}')) LIKE ?`, [`%${escapeLike(value)}%`]);
         } else {
           query.whereRaw(`JSON_UNQUOTE(JSON_EXTRACT(cards.game_data, '${def.path}')) = ?`, [value]);
         }

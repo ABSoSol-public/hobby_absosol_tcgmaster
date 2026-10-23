@@ -1,3 +1,11 @@
+# HSTS nur, wenn die Anfrage über den TLS-Reverse-Proxy kam (X-Forwarded-Proto);
+# bei leerem Wert lässt nginx den Header weg. Ein Browser ignoriert HSTS über
+# HTTP ohnehin, so bleibt der reine LAN-HTTP-Betrieb unberührt.
+map $http_x_forwarded_proto $hsts_header {
+    default "";
+    https   "max-age=31536000";
+}
+
 server {
     listen 80;
     server_name _;
@@ -29,6 +37,7 @@ server {
 
     # Statische Assets ausliefern, SPA-Routing per Fallback auf index.html
     location / {
+        include /etc/nginx/snippets/security-headers.conf;
         try_files $uri $uri/ /index.html;
     }
 
@@ -38,6 +47,7 @@ server {
     # teils tagelang eine veraltete index.html mit Verweisen auf längst
     # ersetzte Bundles — ohne Fehler, einfach nur alte Funktionsstände).
     location = /index.html {
+        include /etc/nginx/snippets/security-headers.conf;
         add_header Cache-Control "no-cache";
     }
 
@@ -45,6 +55,7 @@ server {
     # bei jeder inhaltlichen Änderung) — dürfen daher unbegrenzt lange und ohne
     # erneute Prüfung gecacht werden.
     location ^~ /assets/ {
+        include /etc/nginx/snippets/security-headers.conf;
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 
@@ -64,7 +75,6 @@ server {
     location /images/ {
         proxy_pass http://backend:3001/images/;
         proxy_set_header Host $host;
-        proxy_cache_valid 200 7d;
         expires 7d;
         add_header Cache-Control "public";
     }

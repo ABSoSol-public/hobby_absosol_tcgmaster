@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db';
-import { compareCollectorNumbers } from '../services/cardNumbers';
+import { compareCollectorNumbers, escapeLike } from '../services/cardNumbers';
 import { getUsdToEurRate } from '../services/exchangeRate';
 import { withLocalImages } from '../services/images';
 import { hypotheticalValueSql, marketValueSql } from '../services/valuation';
@@ -63,12 +63,9 @@ export async function collectionRoutes(app: FastifyInstance) {
     if (req.query.game) query.where('games.code', req.query.game);
     if (req.query.set) query.where('card_prints.set_id', Number(req.query.set));
     if (req.query.search) {
+      const like = `%${escapeLike(req.query.search)}%`;
       query.where((qb) => {
-        qb.where('cards.name', 'like', `%${req.query.search}%`).orWhere(
-          'cards.name_de',
-          'like',
-          `%${req.query.search}%`
-        );
+        qb.where('cards.name', 'like', like).orWhere('cards.name_de', 'like', like);
       });
     }
     if (req.query.condition) query.where('collection_items.condition', req.query.condition);

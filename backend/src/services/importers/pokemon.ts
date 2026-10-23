@@ -98,6 +98,7 @@ async function fetchAll<T>(path: string, onProgress: (msg: string) => void, labe
 async function runGermanTranslationFallback(gameId: number, onProgress: (msg: string) => void): Promise<ImportStats> {
   const [{ setCount }] = (await db('card_sets').where('game_id', gameId).count({ setCount: '*' })) as { setCount: number }[];
   const existing = await db('cards').where('game_id', gameId).select('id', 'external_id', 'name_de', 'card_type', 'game_data');
+  const existingById = new Map(existing.map((e) => [e.id, e]));
   const needsCheck = existing.filter((c) => !c.name_de || (isPokemonSupertype(c.card_type) && parseGameDataPokedexId(c.game_data) == null));
   onProgress(`Sekundärquelle TCGdex: ${existing.length} bereits vorhandene Karten, davon ${needsCheck.length} ohne deutsche Übersetzung und/oder Pokédex-Nummer.`);
 
@@ -118,7 +119,7 @@ async function runGermanTranslationFallback(gameId: number, onProgress: (msg: st
   let found = 0;
   for (const r of results) {
     if (!r.t) continue;
-    const row = existing.find((e) => e.id === r.id)!;
+    const row = existingById.get(r.id)!;
     const patch: Record<string, unknown> = { updated_at: db.fn.now() };
     if (!row.name_de) {
       patch.name_de = r.t.name;
@@ -176,31 +177,14 @@ export const pokemonImporter: GameImporter = {
     // schon in der DB haben. Bei --force wird deshalb trotzdem versucht,
     // fehlende Übersetzungen für den bestehenden Bestand nachzuziehen, statt
     // den ganzen Import ergebnislos abzubrechen.
-    let setRows: { game_id: number; code: string; name: string; release_date: string | null; card_count: number | null; image_url: string | null }[];
-    let setIdByCode: Map<string, number>;
+    // Nur der Abruf der Fremdquelle steckt im try — DB-Fehler beim Schreiben der
+    // Sets sollen den Lauf weiterhin als Fehler abbrechen und nicht still im
+    // Fallback verschwinden.
+    let sets: PokemonSet[];
     let cards: PokemonCard[];
     try {
       onProgress('Lade Set-Liste von pokemontcg.io …');
-      const sets = await fetchAll<PokemonSet>('/sets', onProgress, 'Sets');
-      setRows = sets.map((s) => ({
-        game_id: game.id,
-        code: s.id,
-        name: s.name,
-        release_date: s.releaseDate ? s.releaseDate.replace(/\//g, '-') : null,
-        card_count: s.total || null,
-        image_url: s.images?.logo || s.images?.symbol || null,
-      }));
-      for (const chunk of chunked(setRows)) {
-        await db('card_sets')
-          .insert(chunk)
-          .onConflict(['game_id', 'code'])
-          .merge(['name', 'release_date', 'card_count', 'image_url']);
-      }
-      setIdByCode = new Map(
-        (await db('card_sets').where('game_id', game.id).select('id', 'code')).map((r) => [r.code, r.id])
-      );
-      onProgress(`${setRows.length} Sets übernommen.`);
-
+      sets = await fetchAll<PokemonSet>('/sets', onProgress, 'Sets');
       onProgress('Lade Kartenkatalog (paginiert) …');
       cards = await fetchAll<PokemonCard>('/cards', onProgress, 'Karten');
     } catch (err) {
@@ -211,8 +195,28 @@ export const pokemonImporter: GameImporter = {
       // sonst bliebe genau der dringende Teil (deutsche Namen) tagelang
       // hängen, obwohl TCGdex bereits erreichbar wäre.
       onProgress(`Warnung: pokemontcg.io nicht ladbar (${(err as Error).message}) — Katalog/Preise bleiben unverändert, versuche trotzdem deutsche TCGdex-Übersetzungen nachzuziehen.`);
-      return runGermanTranslationFallback(game.id, onProgress);
+      const stats = await runGermanTranslationFallback(game.id, onProgress);
+      return { ...stats, warning: `pokemontcg.io nicht erreichbar (${(err as Error).message}) — Katalog/Sets/Preise sind veraltet, nur deutsche Übersetzungen/Pokédex-Nummern nachgezogen` };
     }
+
+    const setRows = sets.map((s) => ({
+      game_id: game.id,
+      code: s.id,
+      name: s.name,
+      release_date: s.releaseDate ? s.releaseDate.replace(/\//g, '-') : null,
+      card_count: s.total || null,
+      image_url: s.images?.logo || s.images?.symbol || null,
+    }));
+    for (const chunk of chunked(setRows)) {
+      await db('card_sets')
+        .insert(chunk)
+        .onConflict(['game_id', 'code'])
+        .merge(['name', 'release_date', 'card_count', 'image_url']);
+    }
+    const setIdByCode = new Map(
+      (await db('card_sets').where('game_id', game.id).select('id', 'code')).map((r) => [r.code, r.id])
+    );
+    onProgress(`${setRows.length} Sets übernommen.`);
 
     const existingCardHashes = new Map(
       (await db('cards').where('game_id', game.id).select('external_id', 'content_hash')).map((r) => [

@@ -7,6 +7,11 @@ dotenv.config();
 
 export const config = {
   apiPort: Number(process.env.API_PORT || 3001),
+  // Anzahl vertrauenswürdiger Reverse-Proxy-Hops vor dem Backend (für req.ip /
+  // Rate-Limiting). 1 = nur der Frontend-nginx; 2 = zusätzlich der DSM-Reverse-
+  // Proxy. NICHT `true` verwenden: das vertraut dem linken (vom Client frei
+  // setzbaren) Eintrag von X-Forwarded-For und macht das Login-Limit umgehbar.
+  trustProxyHops: Math.max(0, Number(process.env.TRUST_PROXY_HOPS ?? 1)),
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173').split(','),
   // Optionaler API-Key für pokemontcg.io (kostenlos; ohne Key stark ratenlimitiert)
   pokemonApiKey: process.env.POKEMON_TCG_API_KEY || '',

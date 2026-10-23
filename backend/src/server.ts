@@ -1,5 +1,6 @@
 import { buildApp } from './app';
 import { config } from './config';
+import { db } from './db';
 
 async function main() {
   if (!config.auth.jwtSecret) {
@@ -8,6 +9,19 @@ async function main() {
   }
 
   const app = await buildApp();
+
+  // Läuft beim Start noch ein Job mit status='running', ist der vorige Prozess
+  // mittendrin gestorben (Absturz/Neustart) — der Job läuft definitiv nicht mehr.
+  // Ohne Aufräumen würde die Prüfung in routes/imports.ts bzw. routes/images.ts
+  // für dieses Spiel dauerhaft mit 409 "läuft bereits" ablehnen.
+  for (const table of ['import_jobs', 'image_jobs']) {
+    const n = await db(table).where('status', 'running').update({
+      status: 'failed',
+      finished_at: db.fn.now(),
+      message: 'Abgebrochen: Backend wurde während des Laufs beendet/neu gestartet.',
+    });
+    if (n > 0) app.log.warn(`${n} verwaiste(r) Job(s) in ${table} auf "failed" gesetzt.`);
+  }
 
   // Ohne eigenen Handler beendet Node.js den kompletten Prozess bei jeder
   // unbehandelten Promise-Rejection (Standardverhalten seit Node 15) bzw. bei

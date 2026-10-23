@@ -13,25 +13,38 @@ function isPermanentSourceMiss(message: string): boolean {
   return /^HTTP 4\d\d$/.test(message) && message !== 'HTTP 429';
 }
 
+// Prozessinterner Schutz gegen zwei gleichzeitige Starts (Prüfung + Insert sind nicht atomar).
+const startingOrRunning = new Set<string>();
+
 /** Führt einen Bild-Download als Hintergrund-Job aus und protokolliert ihn in image_jobs. */
 export async function runImageDownloadJob(
   gameCode: string | undefined,
   log: (msg: string) => void = console.log
 ): Promise<number> {
+  const guardKey = gameCode || '*';
+  if (startingOrRunning.has(guardKey)) throw new Error('Es läuft bereits eine Bild-Aktualisierung für diesen Bereich.');
+  startingOrRunning.add(guardKey);
+
   let gameId: number | null = null;
-  if (gameCode) {
-    const game = await db('games').where({ code: gameCode }).first();
-    if (!game) throw new Error(`Spiel "${gameCode}" nicht gefunden.`);
-    gameId = game.id;
+  let jobId: number;
+  try {
+    if (gameCode) {
+      const game = await db('games').where({ code: gameCode }).first();
+      if (!game) throw new Error(`Spiel "${gameCode}" nicht gefunden.`);
+      gameId = game.id;
+    }
+
+    const running = await db('image_jobs')
+      .where('status', 'running')
+      .modify((q) => (gameId === null ? q.whereNull('game_id') : q.where('game_id', gameId)))
+      .first();
+    if (running) throw new Error('Es läuft bereits eine Bild-Aktualisierung für diesen Bereich.');
+
+    [jobId] = await db('image_jobs').insert({ game_id: gameId, status: 'running' });
+  } catch (err) {
+    startingOrRunning.delete(guardKey);
+    throw err;
   }
-
-  const running = await db('image_jobs')
-    .where('status', 'running')
-    .modify((q) => (gameId === null ? q.whereNull('game_id') : q.where('game_id', gameId)))
-    .first();
-  if (running) throw new Error('Es läuft bereits eine Bild-Aktualisierung für diesen Bereich.');
-
-  const [jobId] = await db('image_jobs').insert({ game_id: gameId, status: 'running' });
 
   // Zwischenstand-Updates strikt nacheinander verketten: da runImageDownload
   // seine letzte Fortschrittsmeldung (DB-Sync-Ergebnis) ungeawaited kurz vor
@@ -78,7 +91,9 @@ export async function runImageDownloadJob(
         finished_at: db.fn.now(),
         message: err.message,
       });
-    });
+    })
+    .finally(() => startingOrRunning.delete(guardKey))
+    .catch(() => {});
 
   return jobId;
 }

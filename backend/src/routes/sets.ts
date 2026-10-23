@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db';
-import { compareCollectorNumbers } from '../services/cardNumbers';
+import { compareCollectorNumbers, escapeLike } from '../services/cardNumbers';
 import { getUsdToEurRate } from '../services/exchangeRate';
 import { withLocalImages } from '../services/images';
 import { hypotheticalValueSql, marketValueSql } from '../services/valuation';
@@ -15,7 +15,7 @@ export async function setRoutes(app: FastifyInstance) {
 
       const query = db('card_sets').where('game_id', game.id);
       if (req.query.search) {
-        const term = req.query.search;
+        const term = escapeLike(req.query.search);
         query.where((qb) => {
           qb.where('name', 'like', `%${term}%`).orWhere('code', 'like', `%${term}%`);
         });

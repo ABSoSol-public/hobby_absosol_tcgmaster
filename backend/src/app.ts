@@ -20,6 +20,8 @@ export async function buildApp() {
   // trustProxy: die App läuft hinter einem Reverse Proxy (nginx-Container bzw.
   // im Deployment zusätzlich der DSM-Reverse-Proxy) — ohne das würde Rate-Limiting
   // (und jede andere IP-basierte Logik) immer nur die eine Proxy-IP sehen.
+  // Bewusst eine Hop-ANZAHL (config.trustProxyHops) statt `true`: `true` nähme den
+  // ganz linken X-Forwarded-For-Eintrag, den ein Client selbst setzen kann.
   //
   // disableRequestLogging: Fastifys eingebautes Zugriffslog (eine Zeile pro
   // eingehendem Request + eine pro Antwort) würde bei jedem einzelnen
@@ -28,7 +30,7 @@ export async function buildApp() {
   // Echte Fehler landen weiterhin im Log (expliziter `app.log.error()` im
   // Error-Handler unten), Import-/Bild-Download-Fortschritt ebenso (nutzt
   // `app.log.info()` gezielt in routes/imports.ts bzw. routes/images.ts).
-  const app = Fastify({ logger: true, trustProxy: true, disableRequestLogging: true });
+  const app = Fastify({ logger: true, trustProxy: config.trustProxyHops, disableRequestLogging: true });
 
   // Security-Header (X-Content-Type-Options, Referrer-Policy, HSTS, …). Kein
   // eigenes CSP-Regelwerk nötig — dieser Prozess liefert nur JSON-API-Antworten
