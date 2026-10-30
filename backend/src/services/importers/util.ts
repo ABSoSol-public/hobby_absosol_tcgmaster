@@ -134,6 +134,20 @@ export async function fetchDotggCards<T>(gameSlug: string): Promise<T[]> {
   }
 }
 
+/**
+ * Set-Metadaten derselben dotgg.gg-API (eigener Endpoint, nicht in den Karten
+ * enthalten) — liefert u. a. das Release-Datum als Unix-Timestamp (Sekunden).
+ * Deckt nur die "großen" Sets ab, keine Mini-Promo-Sets. Gleiches Best-effort-
+ * Verhalten wie {@link fetchDotggCards}.
+ */
+export async function fetchDotggSets<T>(gameSlug: string): Promise<T[]> {
+  try {
+    return await fetchJson<T[]>(`https://api.dotgg.gg/cgfw/getsets?game=${gameSlug}`);
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchDotggCardmarketPrices(gameSlug: string): Promise<Map<string, DotggPriceInfo>> {
   const map = new Map<string, DotggPriceInfo>();
   try {

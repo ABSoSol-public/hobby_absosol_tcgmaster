@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { GameImporter, ImportOptions, ImportStats } from './types';
-import { chunked, fetchDotggCards, fetchJson, hashOf, recordPriceHistory, upsertSets } from './util';
+import { chunked, fetchDotggCards, fetchDotggSets, fetchJson, hashOf, recordPriceHistory, upsertSets } from './util';
 import translationsJson from '../../data/riftbound.de.json';
 
 // Datenquelle: riftcodex.com — offene REST-API ohne Key (v0.2.0, nur Englisch).
@@ -48,6 +48,15 @@ interface Paged<T> {
  * (siehe Vendetta/Radiance-Fall, Stand 2026-10). dotgg aktualisiert sichtbar schneller.
  * Die ID ist "{SET}-{Sammelnummer}" (z. B. "RAD-038", "RAD-R04A", "SGN-T01-P").
  */
+/** Eintrag von https://api.dotgg.gg/cgfw/getsets?game=riftbound — eigener Endpoint
+ *  mit Release-Datum (Unix-Sekunden), fehlt in der Kartenliste. Nur für die
+ *  "großen" Sets, Mini-Promo-Sets (ARC, SGN, T1A/T1S, …) tauchen hier nicht auf. */
+interface DotggSet {
+  code: string;
+  name: string;
+  ReleaseDate?: string | null;
+}
+
 interface DotggCard {
   id: string;
   name: string;
@@ -184,6 +193,12 @@ export const riftboundImporter: GameImporter = {
     // die Daten woanders längst verfügbar sind. Einmal laden, für beides nutzen.
     onProgress('Lade Kartenliste von dotgg.gg (Preise + Fallback-Sets) …');
     const dotggCards = await fetchDotggCards<DotggCard>('riftbound');
+    const dotggSets = await fetchDotggSets<DotggSet>('riftbound');
+    const releaseDateByPrefix = new Map(
+      dotggSets
+        .filter((s) => s.ReleaseDate)
+        .map((s) => [s.code.toUpperCase(), new Date(Number(s.ReleaseDate) * 1000).toISOString().slice(0, 10)])
+    );
     const knownSetCodes = new Set(setsRes.items.map((s) => s.set_id.toUpperCase()));
     const fallbackGroups = new Map<string, DotggCard[]>();
     for (const c of dotggCards) {
@@ -197,6 +212,7 @@ export const riftboundImporter: GameImporter = {
       code,
       name: group.find((c) => c.set_name)?.set_name || code,
       card_count: group.length,
+      release_date: releaseDateByPrefix.get(code) ?? null,
     }));
     if (fallbackSets.length) {
       onProgress(
@@ -212,7 +228,7 @@ export const riftboundImporter: GameImporter = {
     // genauso einen Re-Import auslöst wie eine Änderung bei riftcodex selbst.
     const versionBasis = [
       ...setsRes.items.map((s) => ({ set_id: s.set_id, name: s.name, card_count: s.card_count ?? null, published_on: s.published_on ?? null })),
-      ...fallbackSets.map((s) => ({ set_id: s.code, name: s.name, card_count: s.card_count, published_on: null })),
+      ...fallbackSets.map((s) => ({ set_id: s.code, name: s.name, card_count: s.card_count, published_on: s.release_date })),
     ].sort((a, b) => a.set_id.localeCompare(b.set_id));
     const remoteVersion = `riftcodex+dotgg|${hashOf(versionBasis)}`;
     if (!options.force) {
@@ -231,7 +247,7 @@ export const riftboundImporter: GameImporter = {
         release_date: s.published_on ? s.published_on.slice(0, 10) : null,
         card_count: s.card_count ?? null,
       })),
-      ...fallbackSets.map((s) => ({ code: s.code, name: s.name, release_date: null, card_count: s.card_count })),
+      ...fallbackSets.map((s) => ({ code: s.code, name: s.name, release_date: s.release_date, card_count: s.card_count })),
     ]);
     onProgress(`${setsRes.items.length + fallbackSets.length} Sets übernommen.`);
 
