@@ -119,6 +119,21 @@ export interface DotggPriceInfo {
  * ohne Cardmarket-Daten für diesen Lauf (holt sie sich beim nächsten
  * Delta-Import automatisch nach).
  */
+/**
+ * Rohe Kartenliste derselben dotgg.gg-API, ungefiltert — für Importer, die mehr als
+ * nur den Preis brauchen (z. B. Riftbound als Fallback-Quelle für Sets, die die
+ * eigentliche Primärquelle riftcodex.com noch nicht kennt, siehe riftbound.ts).
+ * Gleiches Best-effort-Verhalten wie {@link fetchDotggCardmarketPrices}: Fehler
+ * liefern eine leere Liste statt zu werfen.
+ */
+export async function fetchDotggCards<T>(gameSlug: string): Promise<T[]> {
+  try {
+    return await fetchJson<T[]>(`https://api.dotgg.gg/cgfw/getcards?game=${gameSlug}`);
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchDotggCardmarketPrices(gameSlug: string): Promise<Map<string, DotggPriceInfo>> {
   const map = new Map<string, DotggPriceInfo>();
   try {

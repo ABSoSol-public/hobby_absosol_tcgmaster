@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { GameImporter, ImportOptions, ImportStats } from './types';
-import { chunked, fetchDotggCardmarketPrices, fetchJson, hashOf, recordPriceHistory, upsertSets } from './util';
+import { chunked, fetchDotggCards, fetchJson, hashOf, recordPriceHistory, upsertSets } from './util';
 import translationsJson from '../../data/riftbound.de.json';
 
 // Datenquelle: riftcodex.com — offene REST-API ohne Key (v0.2.0, nur Englisch).
@@ -41,6 +41,33 @@ interface Paged<T> {
   pages: number;
 }
 
+/**
+ * Eintrag der dotgg.gg-Kartenliste (https://api.dotgg.gg/cgfw/getcards?game=riftbound).
+ * Dient hier als Fallback-Quelle für ganze Sets, die riftcodex.com noch nicht führt —
+ * z. B. kurz nach einem offiziellen Set-Release, bevor riftcodex nachgezogen hat
+ * (siehe Vendetta/Radiance-Fall, Stand 2026-10). dotgg aktualisiert sichtbar schneller.
+ * Die ID ist "{SET}-{Sammelnummer}" (z. B. "RAD-038", "RAD-R04A", "SGN-T01-P").
+ */
+interface DotggCard {
+  id: string;
+  name: string;
+  effect?: string | null;
+  flavor?: string | null;
+  color?: string[] | null;
+  cost?: string | null;
+  power?: string | null;
+  might?: string | null;
+  type?: string[] | null;
+  supertype?: string | null;
+  rarity?: string | null;
+  tags?: string[] | null;
+  set_name?: string | null;
+  image?: string | null;
+  promo?: string | null;
+  cmPrice?: string | null;
+  cmurl?: string | null;
+}
+
 /** Der "plain"-Text der API enthält HTML-Entities (z. B. "[&gt;]" für das Erschöpfen-Symbol).
  *  Manche Prints tragen den Platzhalter "[NO TEXT]" statt eines leeren Textes. */
 function decodeEntities(text: string | null | undefined): string | null {
@@ -75,6 +102,56 @@ function thumbnailUrl(imageUrl: string | null | undefined): string | null {
   return `${imageUrl}${imageUrl.includes('?') ? '&' : '?'}w=300`;
 }
 
+/**
+ * Basisname für dotgg-Fallback-Karten: anders als riftcodex (feste Suffix-Liste)
+ * hängt dotgg bei Promo-Drucken frei formulierte Klammerzusätze an
+ * ("... (Radiance Nexus Night Promo)", "... (Prerelease Promo)", …) — die Menge
+ * der möglichen Promo-Bezeichnungen wächst mit jedem Set, eine feste Liste wäre
+ * nicht zukunftssicher. Deshalb wird jeder abschließende Klammerzusatz entfernt.
+ * Bewusster Kompromiss: nur als Übergangsdaten gedacht, bis riftcodex das Set
+ * selbst führt und beim nächsten Lauf die Namenshoheit übernimmt.
+ */
+function dotggBaseName(name: string): string {
+  let base = name;
+  for (;;) {
+    const stripped = base.replace(/\s*\([^()]*\)\s*$/, '').trim();
+    if (stripped === base) return base;
+    base = stripped;
+  }
+}
+
+/** dotgg-Pendant zu decodeEntities(): HTML-Entities wie bei riftcodex, zusätzlich
+ *  "<br />"-Zeilenumbrüche, die riftcodex' "plain"-Text nicht kennt. */
+function decodeDotggText(text: string | null | undefined): string | null {
+  const decoded = decodeEntities(text);
+  return decoded ? decoded.replace(/<br\s*\/?>/gi, '') : decoded;
+}
+
+function numOrNull(value: string | null | undefined): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Sammelnummer aus der dotgg-ID ("RAD-038" → "038", "RAD-179-STAR" → "179-STAR"). */
+function dotggCollectorNumber(id: string): string {
+  return id.split('-').slice(1).join('-');
+}
+
+/** Set-Code aus der dotgg-ID ("RAD-038" → "RAD"). */
+function dotggSetPrefix(id: string): string {
+  return (id.split('-')[0] || '').toUpperCase();
+}
+
+/** Kanonischer Print je Fallback-Karte: Nicht-Promo vor Promo, regulärer
+ *  Sammelnummer-Druck (nur Ziffern) vor Sonder-IDs (Buchstaben-Suffix, "-STAR", …). */
+function dotggScore(c: DotggCard): number {
+  let s = 0;
+  if (c.promo !== '1') s += 100;
+  if (/^[a-z0-9]+-\d+$/i.test(c.id)) s += 10;
+  return s;
+}
+
 async function fetchAllCards(onProgress: (msg: string) => void): Promise<RiftCard[]> {
   const items: RiftCard[] = [];
   for (let page = 1, pages = 1; page <= pages; page++) {
@@ -99,12 +176,45 @@ export const riftboundImporter: GameImporter = {
     // erwischt nur --force — akzeptierter Kompromiss.
     onProgress('Lade Set-Liste von Riftcodex …');
     const setsRes = await fetchJson<Paged<RiftSet>>(`${API_BASE}/sets?size=100`);
+
+    // dotgg.gg dient zweifach: als Preisquelle (wie bisher) UND als Fallback für
+    // Sets, die riftcodex.com noch nicht führt. riftcodex pflegt neue Sets erst mit
+    // einigen Tagen Verzug nach dem offiziellen Release (beobachtet bei Vendetta,
+    // Radiance) — ohne Fallback bliebe der Katalog bis dahin unvollständig, obwohl
+    // die Daten woanders längst verfügbar sind. Einmal laden, für beides nutzen.
+    onProgress('Lade Kartenliste von dotgg.gg (Preise + Fallback-Sets) …');
+    const dotggCards = await fetchDotggCards<DotggCard>('riftbound');
+    const knownSetCodes = new Set(setsRes.items.map((s) => s.set_id.toUpperCase()));
+    const fallbackGroups = new Map<string, DotggCard[]>();
+    for (const c of dotggCards) {
+      const prefix = dotggSetPrefix(c.id);
+      if (!prefix || knownSetCodes.has(prefix)) continue;
+      const group = fallbackGroups.get(prefix);
+      if (group) group.push(c);
+      else fallbackGroups.set(prefix, [c]);
+    }
+    const fallbackSets = [...fallbackGroups.entries()].map(([code, group]) => ({
+      code,
+      name: group.find((c) => c.set_name)?.set_name || code,
+      card_count: group.length,
+    }));
+    if (fallbackSets.length) {
+      onProgress(
+        `${fallbackSets.length} Set(s) kennt riftcodex noch nicht, über dotgg.gg-Fallback ergänzt: ${fallbackSets
+          .map((s) => `${s.name} (${s.code})`)
+          .join(', ')}.`
+      );
+    }
+
     // Die API liefert die Sets in instabiler Reihenfolge — für einen stabilen
     // Versions-Fingerabdruck sortieren und auf die relevanten Felder reduzieren.
-    const versionBasis = setsRes.items
-      .map((s) => ({ set_id: s.set_id, name: s.name, card_count: s.card_count ?? null, published_on: s.published_on ?? null }))
-      .sort((a, b) => a.set_id.localeCompare(b.set_id));
-    const remoteVersion = `riftcodex|${hashOf(versionBasis)}`;
+    // Fallback-Sets fließen mit ein, damit ein neues/wachsendes Fallback-Set
+    // genauso einen Re-Import auslöst wie eine Änderung bei riftcodex selbst.
+    const versionBasis = [
+      ...setsRes.items.map((s) => ({ set_id: s.set_id, name: s.name, card_count: s.card_count ?? null, published_on: s.published_on ?? null })),
+      ...fallbackSets.map((s) => ({ set_id: s.code, name: s.name, card_count: s.card_count, published_on: null })),
+    ].sort((a, b) => a.set_id.localeCompare(b.set_id));
+    const remoteVersion = `riftcodex+dotgg|${hashOf(versionBasis)}`;
     if (!options.force) {
       const state = await db('import_state').where({ game_id: game.id }).first();
       if (state && state.source_version === remoteVersion) {
@@ -113,28 +223,31 @@ export const riftboundImporter: GameImporter = {
       }
     }
 
-    // 1) Sets
-    const setIdByCode = await upsertSets(
-      game.id,
-      setsRes.items.map((s) => ({
+    // 1) Sets (riftcodex + ggf. dotgg-Fallback-Sets in einem Zug)
+    const setIdByCode = await upsertSets(game.id, [
+      ...setsRes.items.map((s) => ({
         code: s.set_id,
         name: s.name,
         release_date: s.published_on ? s.published_on.slice(0, 10) : null,
         card_count: s.card_count ?? null,
-      }))
-    );
-    onProgress(`${setsRes.items.length} Sets übernommen.`);
+      })),
+      ...fallbackSets.map((s) => ({ code: s.code, name: s.name, release_date: null, card_count: s.card_count })),
+    ]);
+    onProgress(`${setsRes.items.length + fallbackSets.length} Sets übernommen.`);
 
     // 2) Alle Prints laden und zu logischen Karten gruppieren.
     //    Die API liefert jede Druckvariante (Alt Art, Promos, …) als eigenen Eintrag;
     //    unser Schema trennt Karte (cards) und Druck (card_prints).
     const apiCards = await fetchAllCards(onProgress);
 
-    // Cardmarket-Preise/-Links über die freie dotgg.gg-API — riftcodex.com
-    // selbst liefert keine Preise. Schlüssel dort: "{Set-Code}-{Sammelnummer}"
-    // (z. B. "UNL-205"), unabhängig von riftcodex' eigenem Aufbau verifiziert.
-    onProgress('Lade Cardmarket-Preise (dotgg.gg) …');
-    const cmPrices = await fetchDotggCardmarketPrices('riftbound');
+    // Cardmarket-Preise/-Links aus der bereits geladenen dotgg-Liste. Schlüssel:
+    // "{Set-Code}-{Sammelnummer}" (z. B. "UNL-205"), unabhängig von riftcodex'
+    // eigenem Aufbau verifiziert.
+    const cmPrices = new Map<string, { price: number | null; url: string | null }>();
+    for (const c of dotggCards) {
+      const price = numOrNull(c.cmPrice);
+      cmPrices.set(c.id, { price: price && price > 0 ? price : null, url: c.cmurl || null });
+    }
     onProgress(`${cmPrices.size} Cardmarket-Preise empfangen.`);
 
     const byBaseName = new Map<string, RiftCard[]>();
@@ -200,6 +313,55 @@ export const riftboundImporter: GameImporter = {
       };
     });
 
+    // 3b) Fallback-Karten (Sets, die nur dotgg.gg kennt): gleiche Struktur wie oben,
+    // je logische Karte nach dotggBaseName() gruppiert. Teilt sich externalId =
+    // hashOf(name) mit riftcodex — führt riftcodex das Set später selbst, wird
+    // dieselbe Karte bei gleichem Namen automatisch mit den dann besseren
+    // riftcodex-Daten überschrieben statt dupliziert.
+    const fallbackByBaseName = new Map<string, DotggCard[]>();
+    for (const group of fallbackGroups.values()) {
+      for (const c of group) {
+        const key = dotggBaseName(c.name);
+        const existing = fallbackByBaseName.get(key);
+        if (existing) existing.push(c);
+        else fallbackByBaseName.set(key, [c]);
+      }
+    }
+    const fallbackCardRowsAll = [...fallbackByBaseName.entries()].map(([name, group]) => {
+      const canon = [...group].sort((a, b) => dotggScore(b) - dotggScore(a))[0];
+      const externalId = hashOf(name);
+      const de = DE[name];
+      const content = {
+        name,
+        name_de: de?.name ?? null,
+        card_type: canon.type?.[0] || null,
+        card_text: decodeDotggText(canon.effect),
+        card_text_de: de?.text ?? null,
+        image_url: canon.image || null,
+        image_small_url: canon.image || null,
+        game_data: JSON.stringify({
+          energy: numOrNull(canon.cost),
+          might: numOrNull(canon.might),
+          power: numOrNull(canon.power),
+          domain: canon.color ?? [],
+          supertype: canon.supertype || null,
+          rarity: canon.rarity || null,
+          tags: canon.tags ?? [],
+          artist: null,
+          flavour: decodeDotggText(canon.flavor),
+          riftbound_id: null,
+          source: 'dotgg-fallback',
+        }),
+      };
+      const contentHash = hashOf(content);
+      return {
+        externalId,
+        contentHash,
+        row: { game_id: game.id, external_id: externalId, ...content, content_hash: contentHash },
+      };
+    });
+    cardRowsAll.push(...fallbackCardRowsAll);
+
     const changedCardRows = cardRowsAll
       .filter((c) => existingCardHashes.get(c.externalId) !== c.contentHash)
       .map((c) => ({ ...c.row, updated_at: db.fn.now() }));
@@ -260,6 +422,37 @@ export const riftboundImporter: GameImporter = {
         },
       });
     }
+
+    // 4b) Fallback-Prints: jeder dotgg-Eintrag eines Fallback-Sets ist ein eigener
+    // Druck, Preis/Link liegen direkt am Objekt (kein Lookup wie oben nötig).
+    for (const group of fallbackGroups.values()) {
+      for (const c of group) {
+        const cardId = cardIdByExternal.get(hashOf(dotggBaseName(c.name)));
+        const setId = setIdByCode.get(dotggSetPrefix(c.id));
+        if (!cardId || !setId) continue;
+        const collectorNumber = dotggCollectorNumber(c.id);
+        const rarity = c.rarity || null;
+        const price = numOrNull(c.cmPrice);
+        const marketPrice = price && price > 0 ? price : null;
+        const marketplaceUrl = c.cmurl || null;
+        const contentHash = hashOf({ rarity_code: null, market_price: marketPrice, marketplace_url: marketplaceUrl, currency: 'EUR' });
+        printRowsByKey.set(`${cardId}|${setId}|${collectorNumber}|${rarity}`, {
+          hash: contentHash,
+          row: {
+            card_id: cardId,
+            set_id: setId,
+            collector_number: collectorNumber,
+            rarity,
+            rarity_code: null,
+            market_price: marketPrice,
+            currency: 'EUR',
+            marketplace_url: marketplaceUrl,
+            content_hash: contentHash,
+          },
+        });
+      }
+    }
+
     const changedPrintRows = [...printRowsByKey.entries()]
       .filter(([key, p]) => existingPrints.get(key)?.hash !== p.hash)
       .map(([, p]) => p.row);
@@ -300,12 +493,15 @@ export const riftboundImporter: GameImporter = {
       .merge(['source_version', 'checked_at']);
 
     const stats: ImportStats = {
-      sets: setsRes.items.length,
+      sets: setsRes.items.length + fallbackSets.length,
       cards: cardRowsAll.length,
       prints: printRowsByKey.size,
       cardsChanged: changedCardRows.length,
       printsChanged: changedPrintRows.length,
       skipped: false,
+      warning: fallbackSets.length
+        ? `${fallbackSets.length} Set(s) nur über dotgg.gg-Fallback, riftcodex.com kennt sie noch nicht: ${fallbackSets.map((s) => s.name).join(', ')}`
+        : undefined,
     };
     onProgress(`Import abgeschlossen: ${stats.sets} Sets, ${stats.cardsChanged}/${stats.cards} Karten, ${stats.printsChanged}/${stats.prints} Prints.`);
     return stats;
